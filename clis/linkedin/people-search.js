@@ -34,8 +34,72 @@ function unwrapEvaluateResult(payload) {
     return payload;
 }
 
-function buildSearchUrl(keywords) {
-    return SEARCH_URL_BASE + '?keywords=' + encodeURIComponent(keywords);
+// LinkedIn's people-search page accepts filters as URL query params
+// whose values are JSON-stringified. Strings become `"value"` (with
+// quotes), arrays become `["v1","v2"]`. We percent-encode the whole
+// JSON-string when building the URL.
+const NETWORK_CODE = { '1': 'F', '2': 'S', '3': 'O' };
+const ALLOWED_OPEN_TO = new Set(['proBono', 'boardMember']);
+
+function parseCsv(value) {
+    if (!value) return [];
+    return String(value).split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+function parseNetworkArg(value) {
+    if (!value) return [];
+    const tokens = parseCsv(value);
+    const out = [];
+    for (const tok of tokens) {
+        const code = NETWORK_CODE[tok];
+        if (!code) throw new ArgumentError(`--network values must be one or more of 1,2,3 (got "${tok}")`);
+        if (!out.includes(code)) out.push(code);
+    }
+    return out;
+}
+
+function parseProfileLanguageArg(value) {
+    if (!value) return [];
+    const codes = parseCsv(value).map((c) => c.toLowerCase());
+    for (const c of codes) {
+        if (!/^[a-z]{2}$/.test(c)) throw new ArgumentError(`--profile-language values must be ISO 639-1 2-letter codes (got "${c}")`);
+    }
+    return codes;
+}
+
+function parseOpenToArg(value) {
+    if (!value) return [];
+    const tokens = parseCsv(value);
+    for (const tok of tokens) {
+        if (!ALLOWED_OPEN_TO.has(tok)) throw new ArgumentError(`--open-to values must be one or more of proBono,boardMember (got "${tok}")`);
+    }
+    return tokens;
+}
+
+function buildSearchUrl(opts) {
+    // Back-compat: original signature was buildSearchUrl(keywordsString).
+    // Existing tests still call buildSearchUrl('site reliability engineer'),
+    // so when only keywords are present the output must stay byte-identical
+    // to the original `?keywords=<encoded>` form.
+    if (typeof opts === 'string') opts = { keywords: opts };
+    const parts = ['keywords=' + encodeURIComponent(opts.keywords)];
+    const addString = (key, value) => {
+        const v = normalizeWhitespace(value);
+        if (!v) return;
+        parts.push(key + '=' + encodeURIComponent(JSON.stringify(v)));
+    };
+    const addArray = (key, values) => {
+        if (!Array.isArray(values) || values.length === 0) return;
+        parts.push(key + '=' + encodeURIComponent(JSON.stringify(values)));
+    };
+    addString('firstName', opts.firstName);
+    addString('lastName', opts.lastName);
+    addString('title', opts.title);
+    addString('schoolFreetext', opts.schoolKeyword);
+    addArray('network', opts.network);
+    addArray('profileLanguage', opts.profileLanguage);
+    addArray('serviceCategory', opts.openTo);
+    return SEARCH_URL_BASE + '?' + parts.join('&');
 }
 
 function looksLinkedInAuthWall(value) {
@@ -191,6 +255,13 @@ cli({
     args: [
         { name: 'keywords', type: 'string', required: true, positional: true, help: 'People search keywords, e.g. "site reliability engineer berlin"' },
         { name: 'limit', type: 'int', default: 5, help: `Maximum people to return (1-${MAX_LIMIT}); each query counts toward LinkedIn's monthly CUL` },
+        { name: 'first-name', type: 'string', required: false, help: 'Filter to people whose first name matches this text (LinkedIn KEYWORDS / FIRST NAME filter).' },
+        { name: 'last-name', type: 'string', required: false, help: 'Filter to people whose last name matches this text (LinkedIn KEYWORDS / LAST NAME filter).' },
+        { name: 'title', type: 'string', required: false, help: 'Filter to people whose current title contains this text (LinkedIn KEYWORDS / TITLE filter).' },
+        { name: 'school-keyword', type: 'string', required: false, help: 'Free-text school filter (LinkedIn SCHOOL filter, name match).' },
+        { name: 'network', type: 'string', required: false, help: 'Comma-separated connection degrees: 1, 2, 3 (where 3 means 3rd+). E.g. "1,2" for 1st and 2nd-degree only.' },
+        { name: 'profile-language', type: 'string', required: false, help: 'Comma-separated ISO 639-1 codes for profile language, e.g. "en,fr".' },
+        { name: 'open-to', type: 'string', required: false, help: 'Comma-separated open-to values: proBono, boardMember.' },
     ],
     columns: ['rank', 'name', 'headline', 'location', 'profile_url'],
     func: async (page, args) => {
@@ -198,8 +269,19 @@ cli({
         const keywords = requireStringArg(args, 'keywords', '--keywords');
         const limit = parseLimit(args.limit);
 
+        const filterOpts = {
+            keywords,
+            firstName: args['first-name'],
+            lastName: args['last-name'],
+            title: args.title,
+            schoolKeyword: args['school-keyword'],
+            network: parseNetworkArg(args.network),
+            profileLanguage: parseProfileLanguageArg(args['profile-language']),
+            openTo: parseOpenToArg(args['open-to']),
+        };
+
         try {
-            await page.goto(buildSearchUrl(keywords));
+            await page.goto(buildSearchUrl(filterOpts));
             await page.wait(6);
         } catch (error) {
             throw new CommandExecutionError(`LinkedIn people search navigation failed: ${error?.message || error}`);
@@ -259,4 +341,7 @@ export const __test__ = {
     normalizePeopleRows,
     parseNonNegativeCount,
     extractionScript,
+    parseNetworkArg,
+    parseProfileLanguageArg,
+    parseOpenToArg,
 };
