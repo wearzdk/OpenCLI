@@ -260,7 +260,7 @@ async function collectUserPosts(page, userId, limit, captionFilter) {
 
     while (rows.length < limit && keepPaging) {
         const remaining = limit - rows.length;
-        const pageCount = Math.min(BATCH_LIMIT, remaining);
+        const pageCount = remaining > BATCH_LIMIT ? BATCH_LIMIT : remaining;
         const base = `https://www.instagram.com/api/v1/feed/user/${encodeURIComponent(userId)}/?count=${pageCount}`;
         const url = maxId ? `${base}&max_id=${encodeURIComponent(maxId)}` : base;
         const result = await fetchInstagramJson(page, url);
@@ -317,7 +317,7 @@ async function collectUserPostsByTimeWindow(page, userId, limit, captionFilter, 
     let keepPaging = true;
     while (rows.length < limit && keepPaging) {
         const remaining = limit - rows.length;
-        const pageCount = Math.min(BATCH_LIMIT, remaining);
+        const pageCount = remaining > BATCH_LIMIT ? BATCH_LIMIT : remaining;
         const base = `https://www.instagram.com/api/v1/feed/user/${encodeURIComponent(userId)}/?count=${pageCount}`;
         const url = maxId ? `${base}&max_id=${encodeURIComponent(maxId)}` : base;
         const result = await fetchInstagramJson(page, url);
