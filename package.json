@@ -1,6 +1,6 @@
 {
-  "name": "@jackwener/opencli",
-  "version": "1.8.4",
+  "name": "publishport-opencli",
+  "version": "1.8.4-pp.1",
   "publishConfig": {
     "access": "public"
   },
