@@ -26,10 +26,44 @@ const WHOAMI_PROBE = `(async () => {
 async function verifyJikeIdentity(page) {
   await page.goto('https://web.okjike.com/');
   await page.wait(2);
-  const probe = await page.evaluate(WHOAMI_PROBE);
+  // Navigation race: page.goto can resolve while the tab is still on the blank
+  // 'data:' bootstrap URL (SPA shell not yet committed), where reading
+  // localStorage throws "Storage is disabled inside 'data:' URLs". Poll until
+  // location.href settles on the okjike origin before probing the token.
+  let pageUrl = '';
+  for (let i = 0; i < 30; i++) {
+    pageUrl = await page.evaluate('() => location.href');
+    if (pageUrl.includes('okjike.com')) break;
+    await page.wait(0.5);
+  }
+  if (!pageUrl.includes('okjike.com')) {
+    await page.screenshot({ path: '/tmp/jike_whoami_nav_debug.png' });
+    throw new CommandExecutionError(`Jike whoami: navigation never settled on okjike.com (landed on ${pageUrl}). Debug screenshot: /tmp/jike_whoami_nav_debug.png`);
+  }
+  // SPA hydrate race: JK_ACCESS_TOKEN is written to localStorage during the
+  // app's auth bootstrap, which can lag behind navigation on slow boots. A
+  // one-shot probe right after a fixed wait can read null even on a logged-in
+  // profile. Poll with a bounded loop, breaking as soon as the probe resolves
+  // to a non-anonymous result; only the final probe is treated as authoritative.
+  let probe = await page.evaluate(WHOAMI_PROBE);
+  for (let i = 0; i < 30 && probe?.kind === 'auth'; i++) {
+    await page.wait(0.5);
+    probe = await page.evaluate(WHOAMI_PROBE);
+  }
   if (probe?.kind === 'auth') throw new AuthRequiredError('web.okjike.com', probe.detail);
   if (probe?.kind === 'http') throw new CommandExecutionError(`HTTP ${probe.httpStatus} from Jike users/profile`);
-  if (probe?.kind === 'exception') throw new CommandExecutionError(`Jike whoami failed: ${probe.detail}`);
+  if (probe?.kind === 'exception') {
+    // When the profile is anonymous, okjike redirects to /login and replaces the
+    // document with a blank "data:text/html,<html></html>" page, where reading
+    // localStorage throws "Storage is disabled inside 'data:' URLs". That is the
+    // not-logged-in signal, not a generic execution failure — surface it as such
+    // so callers get an actionable AUTH_REQUIRED instead of an opaque error.
+    const probeUrl = await page.evaluate('() => location.href');
+    if (/^data:/.test(probeUrl) || /\/login/.test(pageUrl)) {
+      throw new AuthRequiredError('web.okjike.com', 'Jike session anonymous (redirected to /login)');
+    }
+    throw new CommandExecutionError(`Jike whoami failed: ${probe.detail}`);
+  }
   if (!probe?.ok) throw new CommandExecutionError(`Unexpected Jike probe: ${JSON.stringify(probe)}`);
   return { user_id: probe.user_id, screen_name: probe.screen_name, username: probe.username };
 }

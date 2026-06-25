@@ -391,7 +391,15 @@ export const publishCommand = cli({
         await page.wait(3);
 
         // 2. 检查登录状态
-        const initState = await page.evaluate(buildExtractPageStateEvaluate());
+        // 发布页是异步 hydrate 的：goto 后 3 秒的一次性快照常常撞上骨架屏，
+        // 误判成"未检测到发布表单"。改成有界轮询：发现登录要求立即抛错，
+        // 发现表单立即继续，否则耐心等待表单 hydrate 完成再判定。
+        let initState = await page.evaluate(buildExtractPageStateEvaluate());
+        for (let i = 0; i < 30; i++) {
+            if (initState?.requiresAuth || initState?.hasPublishForm) break;
+            await page.wait(0.5);
+            initState = await page.evaluate(buildExtractPageStateEvaluate());
+        }
         if (initState?.requiresAuth) {
             throw new AuthRequiredError('www.goofish.com', '发布闲鱼需要先登录，请在 Chrome 中打开 goofish.com 并完成登录');
         }
@@ -400,14 +408,31 @@ export const publishCommand = cli({
         }
 
         // 3. 选择分类（先于其他字段，因为分类可能影响表单结构）
-        const categoryResult = await page.evaluate(buildSelectCategoryEvaluate(data.category));
+        // 分类触发器同样异步渲染：一次性调用碰上还没 hydrate 的触发器会以
+        // category-trigger-not-found 立即抛错。改成有界轮询：成功即停，仅当
+        // 触发器始终没出现（trigger-not-found）时才重试等待，其它原因
+        // （弹窗已开但确实匹配不到分类）保持原行为直接判定。
+        let categoryResult = await page.evaluate(buildSelectCategoryEvaluate(data.category));
+        for (let i = 0; i < 30; i++) {
+            if (categoryResult?.ok || categoryResult?.reason !== 'category-trigger-not-found') break;
+            await page.wait(0.5);
+            categoryResult = await page.evaluate(buildSelectCategoryEvaluate(data.category));
+        }
         if (!categoryResult?.ok) {
             throw new CommandExecutionError(`Xianyu category selection failed: ${categoryResult?.reason || 'unknown-reason'}`);
         }
         await page.wait(1.5);
 
         // 4. 填充表单
-        const fillResult = await page.evaluate(buildFillFormEvaluate(data));
+        // 字段在选完分类后才陆续渲染：一次性填充会因部分字段尚未挂载而以
+        // missing fields 抛错。改成有界轮询：重复填充（设值是幂等的）直到全部
+        // 字段就位，仍缺才判定失败。
+        let fillResult = await page.evaluate(buildFillFormEvaluate(data));
+        for (let i = 0; i < 30; i++) {
+            if (fillResult?.ok) break;
+            await page.wait(0.5);
+            fillResult = await page.evaluate(buildFillFormEvaluate(data));
+        }
         if (!fillResult?.ok) {
             const missing = Array.isArray(fillResult?.missing) ? fillResult.missing.join(', ') : 'unknown';
             throw new CommandExecutionError(`Xianyu publish form fill failed; missing fields: ${missing}`);
@@ -419,7 +444,14 @@ export const publishCommand = cli({
             if (!page.setFileInput) {
                 throw new CommandExecutionError('Xianyu publish requires Browser Bridge file upload support', 'Use a browser mode that supports setFileInput.');
             }
-            const fileInput = await page.evaluate(buildFindFileInputSelectorEvaluate());
+            // file input 也异步渲染：一次性 querySelector 会因尚未挂载而以
+            // no-file-input 抛错。有界轮询等待它出现，仍找不到才判定失败。
+            let fileInput = await page.evaluate(buildFindFileInputSelectorEvaluate());
+            for (let i = 0; i < 30; i++) {
+                if (fileInput?.ok) break;
+                await page.wait(0.5);
+                fileInput = await page.evaluate(buildFindFileInputSelectorEvaluate());
+            }
             if (!fileInput?.ok) {
                 throw new CommandExecutionError(`Xianyu image upload input was not found: ${fileInput?.reason || 'unknown-reason'}`);
             }
@@ -432,7 +464,15 @@ export const publishCommand = cli({
         }
 
         // 6. 点击发布按钮
-        const submitResult = await page.evaluate(buildSubmitEvaluate());
+        // 发布按钮在表单校验完刚填入的值之前常处于 disabled，一次性探测会以
+        // submit-button-not-found-or-disabled 立即抛错。有界轮询等待它变为可点；
+        // evaluate 只在找到可用按钮时才 click 并返回 ok，所以命中即停、不会重复点击。
+        let submitResult = await page.evaluate(buildSubmitEvaluate());
+        for (let i = 0; i < 30; i++) {
+            if (submitResult?.ok) break;
+            await page.wait(0.5);
+            submitResult = await page.evaluate(buildSubmitEvaluate());
+        }
         if (!submitResult?.ok) {
             throw new CommandExecutionError(`Xianyu publish submit failed: ${submitResult?.reason || 'unknown-reason'}`);
         }

@@ -20,6 +20,21 @@ cli({
     columns: ['status', 'message'],
     func: async (page, kwargs) => {
         await page.goto(`https://web.okjike.com/originalPost/${kwargs.id}`);
+        // 详情页 SPA 异步 hydrate，评论输入框一次性 querySelector 会和渲染竞速，慢渲染下
+        // 误报"未找到评论输入框"。改为有界轮询等待输入框（contenteditable 或 textarea）
+        // 出现，再走原有的一次性输入逻辑（选择器/控制流不变）。
+        for (let i = 0; i < 30; i++) {
+            const ready = await page.evaluate(`(() => {
+        const editor =
+          document.querySelector('[class*="_comment_"] [contenteditable="true"]') ||
+          document.querySelector('[contenteditable="true"]');
+        const textarea = document.querySelector('textarea');
+        return !!(editor || textarea);
+      })()`);
+            if (ready)
+                break;
+            await page.wait(0.5);
+        }
         // 1. 找到评论输入框并填入文本
         const inputResult = await page.evaluate(`(async () => {
       try {
@@ -79,6 +94,20 @@ cli({
     })()`);
         if (!inputResult.ok) {
             return [{ status: 'failed', message: inputResult.message }];
+        }
+        // 输入后回复/发布按钮从禁用变为可用需要一点时间，一次性探测会和状态切换竞速，
+        // 误报"未找到可用的回复按钮"。改为有界轮询等待可用按钮出现，再走原有的一次性
+        // 点击逻辑（选择器/控制流不变）。
+        for (let i = 0; i < 30; i++) {
+            const ready = await page.evaluate(`(() => {
+        return Array.from(document.querySelectorAll('button')).some(btn => {
+          const text = btn.textContent?.trim() || '';
+          return (text === '回复' || text === '发布' || text === '发送' || text === '评论') && !btn.disabled;
+        });
+      })()`);
+            if (ready)
+                break;
+            await page.wait(0.5);
         }
         // 2. 点击"回复"或"发布"按钮
         const submitResult = await page.evaluate(`(async () => {

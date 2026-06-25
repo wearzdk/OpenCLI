@@ -193,11 +193,22 @@ async function attachImagesViaDataTransfer(page, absPaths) {
 }
 
 async function submitTweet(page, text) {
+    const submitIterations = Math.ceil(SUBMIT_TIMEOUT_MS / SUBMIT_POLL_MS);
     const clickResult = await page.evaluate(`(async () => {
         try {
             const visible = (el) => !!el && (el.offsetParent !== null || el.getClientRects().length > 0);
-            const buttons = Array.from(document.querySelectorAll('[data-testid="tweetButtonInline"], [data-testid="tweetButton"]'));
-            const btn = buttons.find((el) => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+            // For text-only posts the Tweet button only becomes enabled once
+            // Draft.js has propagated the inserted text into composer state, which
+            // can lag the prior insert/verify step. A single find misfires on
+            // slow renders with "Tweet button is disabled or not found." Poll for
+            // a visible, enabled button before clicking.
+            let btn;
+            for (let i = 0; i < ${JSON.stringify(submitIterations)}; i++) {
+                const buttons = Array.from(document.querySelectorAll('[data-testid="tweetButtonInline"], [data-testid="tweetButton"]'));
+                btn = buttons.find((el) => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+                if (btn) break;
+                await new Promise(r => setTimeout(r, ${JSON.stringify(SUBMIT_POLL_MS)}));
+            }
             if (!btn) return { ok: false, message: 'Tweet button is disabled or not found.' };
             btn.click();
             return { ok: true };

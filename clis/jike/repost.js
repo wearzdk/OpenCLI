@@ -21,6 +21,20 @@ cli({
     columns: ['status', 'message'],
     func: async (page, kwargs) => {
         await page.goto(`https://web.okjike.com/originalPost/${kwargs.id}`);
+        // 详情页 SPA 异步 hydrate，操作栏一次性 querySelector 会和渲染竞速，慢渲染下
+        // 误报"未找到操作栏/转发按钮"。改为有界轮询等待操作栏的第三个可见子元素出现，
+        // 再走原有的一次性点击逻辑（选择器/控制流不变）。
+        for (let i = 0; i < 30; i++) {
+            const ready = await page.evaluate(`(() => {
+        const actions = document.querySelector('[class*="_actions_"]');
+        if (!actions) return false;
+        const children = Array.from(actions.children).filter(c => c.offsetHeight > 0);
+        return !!children[2];
+      })()`);
+            if (ready)
+                break;
+            await page.wait(0.5);
+        }
         // 1. 点击操作栏中的转发按钮（第三个子元素）
         const clickResult = await page.evaluate(`(async () => {
       try {
@@ -39,6 +53,18 @@ cli({
             return [{ status: 'failed', message: clickResult.message }];
         }
         await page.wait(1);
+        // 转发 Popover 菜单异步弹出，一次性查找"转发动态"会和动画/渲染竞速。改为有界
+        // 轮询等待菜单项出现，再走原有的一次性点击逻辑（选择器/控制流不变）。
+        for (let i = 0; i < 30; i++) {
+            const ready = await page.evaluate(`(() => {
+        return Array.from(document.querySelectorAll('button')).some(
+          b => b.textContent?.trim() === '转发动态'
+        );
+      })()`);
+            if (ready)
+                break;
+            await page.wait(0.5);
+        }
         // 2. 在弹出菜单中点击"转发动态"
         const menuResult = await page.evaluate(`(async () => {
       try {
@@ -58,6 +84,17 @@ cli({
         await page.wait(2);
         // 3. 若有附言，在弹窗编辑器中填入
         if (kwargs.text) {
+            // 转发编辑器弹窗异步渲染，一次性查找 contenteditable 会和弹窗渲染竞速，
+            // 慢渲染下误报"未找到附言输入框"。改为有界轮询等待编辑器出现，再走原有的
+            // 一次性写入逻辑（选择器/控制流不变）。
+            for (let i = 0; i < 30; i++) {
+                const ready = await page.evaluate(`(() => {
+          return !!document.querySelector('[contenteditable="true"]');
+        })()`);
+                if (ready)
+                    break;
+                await page.wait(0.5);
+            }
             const textResult = await page.evaluate(`(async () => {
         try {
           const textToInsert = ${JSON.stringify(kwargs.text)};
@@ -76,6 +113,19 @@ cli({
             if (!textResult.ok) {
                 return [{ status: 'failed', message: textResult.message }];
             }
+        }
+        // 转发弹窗的"发送/发布"按钮在内容就绪后才可用，一次性探测会和状态切换竞速。
+        // 改为有界轮询等待可用确认按钮出现，再走原有的一次性点击逻辑（选择器/控制流不变）。
+        for (let i = 0; i < 30; i++) {
+            const ready = await page.evaluate(`(() => {
+        return Array.from(document.querySelectorAll('button')).some(b => {
+          const text = b.textContent?.trim() || '';
+          return (text === '发送' || text === '发布') && !b.disabled;
+        });
+      })()`);
+            if (ready)
+                break;
+            await page.wait(0.5);
         }
         // 4. 点击"发送"按钮确认转发
         const confirmResult = await page.evaluate(`(async () => {

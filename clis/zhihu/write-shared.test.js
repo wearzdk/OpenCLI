@@ -54,6 +54,9 @@ function createPageForDom(documentRoot, state = undefined) {
                 });
             }
         }),
+        // resolveCurrentUserIdentity 改为有界轮询，命中前会反复 await page.wait(...)；
+        // 真实 page 有 wait，mock 这里给一个 no-op 即可，让轮询逻辑跑完。
+        wait: vi.fn().mockResolvedValue(undefined),
     };
 }
 describe('zhihu write shared helpers', () => {

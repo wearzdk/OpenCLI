@@ -18,6 +18,13 @@ const DRAFT_UPLOAD_URL = 'https://creator.douyin.com/creator-micro/content/uploa
 const COMPOSER_WAIT_ATTEMPTS = 120;
 const COVER_INPUT_WAIT_ATTEMPTS = 20;
 const COVER_READY_WAIT_ATTEMPTS = 20;
+// The composer's title input + 暂存离开 button surface while the video is still
+// uploading/transcoding in the background. The visibility radios and a working
+// (enabled) save button settle a beat later than that first paint, and on a slow
+// upload that beat can exceed a 10s window — which is what made this command pass
+// only intermittently. Give the per-field polls a generous budget so the success
+// path no longer depends on upload speed.
+const VIDEO_UPLOAD_WAIT_ATTEMPTS = 200; // up to 100s: wait for upload + composer hydration (exits early once ready; well under the 180s+30 ceiling)
 /**
  * Best-effort dismissal for coach marks and upload tips that can block clicks.
  */
@@ -57,10 +64,72 @@ async function waitForDraftComposer(page) {
     throw new CommandExecutionError('等待抖音草稿编辑页超时', `当前页面: ${lastState.href || 'unknown'}`);
 }
 /**
+ * Wait until the background video upload/transcode finishes AND the composer is
+ * fully hydrated and ready to fill.
+ *
+ * Root cause of this command's intermittence: `waitForDraftComposer` returns as
+ * soon as the title input + 暂存离开 button first paint, but the rest of the
+ * composer (the caption contenteditable editor, the visibility radios) only
+ * hydrates *after* the video upload/transcode completes — which on a normal
+ * connection routinely takes longer than the per-field poll windows. That is why
+ * `caption-editor-missing` / `visibility-missing` appeared at random.
+ *
+ * The reliable readiness signal is the composer's own fields, not a progress
+ * string: wait until the caption editor exists, the requested visibility label
+ * exists, the 暂存离开 button is enabled, and no upload-in-progress copy remains.
+ * Gating fills on this makes the downstream steps deterministic instead of
+ * racing the upload. Combined with the raised `--timeout` ceiling (default 180s),
+ * this comfortably covers slow uploads.
+ *
+ * Best-effort: never throws — if a clear signal can't be read within the budget
+ * we fall through and let the (bounded, patient) field polls remain the safety
+ * net, so behavior is never worse than before.
+ */
+async function waitForVideoUploadComplete(page, visibilityLabel) {
+    for (let attempt = 0; attempt < VIDEO_UPLOAD_WAIT_ATTEMPTS; attempt += 1) {
+        const state = (await page.evaluate(`() => {
+      const text = document.body?.innerText || '';
+      const uploading = /上传中|上传\\s*\\d+%|视频上传中|处理中/.test(text);
+      const saveBtn = Array.from(document.querySelectorAll('button')).find(
+        (el) => (el.textContent || '').includes('暂存离开')
+      );
+      const saveEnabled = saveBtn instanceof HTMLButtonElement
+        ? !saveBtn.disabled && saveBtn.getAttribute('aria-disabled') !== 'true'
+        : false;
+      const hasCaptionEditor = !!document.querySelector('[contenteditable="true"]');
+      const hasVisibility = !!Array.from(document.querySelectorAll('label')).find(
+        (el) => (el.textContent || '').includes(${JSON.stringify(visibilityLabel)})
+      );
+      return { uploading, saveEnabled, hasSaveBtn: !!saveBtn, hasCaptionEditor, hasVisibility };
+    }`));
+        // Ready once the composer's real fields exist, the save button is usable,
+        // and no upload-in-progress copy remains.
+        if (state.hasSaveBtn
+            && state.saveEnabled
+            && state.hasCaptionEditor
+            && state.hasVisibility
+            && !state.uploading) {
+            return;
+        }
+        await page.wait({ time: 0.5 });
+    }
+    // Fall through silently; downstream bounded polls remain the safety net.
+}
+/**
  * Fill title, caption and visibility controls on the live composer page.
  */
 async function fillDraftComposer(page, options) {
-    const titleOk = (await page.evaluate(`() => {
+    // The composer hydrates its sub-fields (title input, caption editor,
+    // visibility labels) progressively after `waitForDraftComposer` returns, so a
+    // one-shot probe of each can race the render and false-fail. Poll each field a
+    // bounded number of times before giving up — same evaluate script, only more
+    // patient. Raised from 20 (10s) to 60 (30s): on a slow upload the visibility
+    // radios can settle well after the title input, and a 10s window made this
+    // step fail intermittently.
+    const FILL_FIELD_ATTEMPTS = 60;
+    let titleOk = false;
+    for (let attempt = 0; attempt < FILL_FIELD_ATTEMPTS; attempt += 1) {
+        titleOk = (await page.evaluate(`() => {
     const titleInput = Array.from(document.querySelectorAll('input')).find(
       (el) => (el.placeholder || '').includes('填写作品标题')
     );
@@ -89,11 +158,17 @@ async function fillDraftComposer(page, options) {
     }
     return true;
   }`));
+        if (titleOk)
+            break;
+        await page.wait({ time: 0.5 });
+    }
     if (!titleOk) {
         throw new CommandExecutionError('填写抖音草稿表单失败: title-input-missing');
     }
     if (options.caption) {
-        const captionOk = (await page.evaluate(`() => {
+        let captionOk = false;
+        for (let attempt = 0; attempt < FILL_FIELD_ATTEMPTS; attempt += 1) {
+            captionOk = (await page.evaluate(`() => {
       const editor = document.querySelector('[contenteditable="true"]');
       if (!(editor instanceof HTMLElement)) return false;
       editor.focus();
@@ -103,11 +178,17 @@ async function fillDraftComposer(page, options) {
       editor.dispatchEvent(new Event('input', { bubbles: true }));
       return true;
     }`));
+            if (captionOk)
+                break;
+            await page.wait({ time: 0.5 });
+        }
         if (!captionOk) {
             throw new CommandExecutionError('填写抖音草稿表单失败: caption-editor-missing');
         }
     }
-    const visibilityOk = (await page.evaluate(`() => {
+    let visibilityOk = false;
+    for (let attempt = 0; attempt < FILL_FIELD_ATTEMPTS; attempt += 1) {
+        visibilityOk = (await page.evaluate(`() => {
     const visibility = Array.from(document.querySelectorAll('label')).find(
       (el) => (el.textContent || '').includes(${JSON.stringify(options.visibilityLabel)})
     );
@@ -115,6 +196,10 @@ async function fillDraftComposer(page, options) {
     visibility.click();
     return true;
   }`));
+        if (visibilityOk)
+            break;
+        await page.wait({ time: 0.5 });
+    }
     if (!visibilityOk) {
         throw new CommandExecutionError('填写抖音草稿表单失败: visibility-missing');
     }
@@ -213,7 +298,17 @@ async function waitForCoverReady(page) {
  * Click the draft button on the composer page and extract the current creation id.
  */
 async function clickSaveDraft(page) {
-    const result = (await page.evaluate(`() => {
+    // The 暂存离开 button and the React fiber carrying `creation_id` can both
+    // settle a beat after the form is filled. A one-shot probe races that and
+    // false-fails with draft-button-missing / creation-id-missing. Poll a bounded
+    // number of times — same evaluate script — before giving up. Retrying only
+    // happens while the button is absent OR still disabled (ok===false), so the
+    // click never fires more than once and never fires on a disabled button.
+    // Raised from 20 (10s) to 60 (30s) to absorb slow uploads.
+    const SAVE_DRAFT_ATTEMPTS = 60;
+    let result = null;
+    for (let attempt = 0; attempt < SAVE_DRAFT_ATTEMPTS; attempt += 1) {
+        result = (await page.evaluate(`() => {
     const extractCreationId = () => {
       const titleInput = Array.from(document.querySelectorAll('input')).find(
         (el) => (el.placeholder || '').includes('填写作品标题')
@@ -238,6 +333,12 @@ async function clickSaveDraft(page) {
     if (!(btn instanceof HTMLButtonElement)) {
       return { ok: false, reason: 'draft-button-missing' };
     }
+    // The button paints before the upload finishes and is disabled until then.
+    // Treat a disabled button as "not ready yet" so the poll keeps waiting
+    // instead of firing a no-op click and then failing on a missing creation_id.
+    if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') {
+      return { ok: false, reason: 'draft-button-disabled' };
+    }
     const creationId = extractCreationId();
     const propKey = Object.keys(btn).find((key) => key.startsWith('__reactProps$'));
     const props = propKey ? btn[propKey] : null;
@@ -258,6 +359,10 @@ async function clickSaveDraft(page) {
       creationId,
     };
   }`));
+        if (result?.ok)
+            break;
+        await page.wait({ time: 0.5 });
+    }
     if (!result?.ok) {
         throw new CommandExecutionError(`点击草稿按钮失败: ${result?.reason || 'unknown'}`);
     }
@@ -270,22 +375,38 @@ async function clickSaveDraft(page) {
     };
 }
 /**
- * Wait until creator center shows the resumable-draft prompt after saving.
+ * Wait until creator center confirms the draft was saved.
+ *
+ * After clicking 暂存离开 Douyin can land on several equivalent success states
+ * depending on timing and A/B layout: the upload page may show the resumable
+ * `继续编辑` prompt, a `草稿保存成功` toast may flash, or the page may navigate
+ * to the content-manage / draft list. Requiring only the first (`继续编辑` on the
+ * upload URL) within a tight 20s window false-failed when any other equivalent
+ * state was reached first. We already hold a real `creation_id` extracted from
+ * the live React fiber at click time, so the save was issued — this step only
+ * confirms it landed. Accept any of the success signals and poll longer (40s).
  */
 async function waitForDraftResult(page, creationId) {
     let lastState = { href: '', bodyText: '' };
-    for (let attempt = 0; attempt < 20; attempt += 1) {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
         lastState = (await page.evaluate(`() => ({
       href: location.href,
       bodyText: document.body?.innerText || ''
     })`));
-        if (lastState.href.includes('/creator-micro/content/upload')
-            && /继续编辑/.test(lastState.bodyText)) {
+        const href = lastState.href || '';
+        const body = lastState.bodyText || '';
+        const resumablePrompt = href.includes('/creator-micro/content/upload')
+            && /继续编辑/.test(body);
+        const saveToast = /草稿保存成功|已保存到草稿|存草稿成功|保存成功/.test(body);
+        // Navigated away from the composer to the content-manage / draft area.
+        const navigatedToManage = /\/creator-micro\/content\/(manage|drafts|works)/.test(href)
+            || (/创作中心/.test(body) && !href.includes('/content/upload'));
+        if (resumablePrompt || saveToast || navigatedToManage) {
             return creationId;
         }
         await page.wait({ time: 1 });
     }
-    throw new CommandExecutionError('未检测到抖音草稿恢复提示', `当前页面: ${lastState.href || 'unknown'}`);
+    throw new CommandExecutionError('未检测到抖音草稿保存确认', `当前页面: ${lastState.href || 'unknown'}`);
 }
 cli({
     site: 'douyin',
@@ -301,6 +422,14 @@ cli({
         { name: 'caption', default: '', help: '正文内容（≤1000字，支持 #话题）' },
         { name: 'cover', default: '', help: '封面图片路径' },
         { name: 'visibility', default: 'public', choices: ['public', 'friends', 'private'] },
+        // Video upload + transcode + composer hydration + form fill + save can
+        // easily exceed the global 60s browser-command ceiling on a normal
+        // connection, which made this command time out intermittently. Declaring
+        // a `timeout` arg opts this command into runtime-enforced timeouts and
+        // raises its default ceiling to 180s; callers can pass --timeout <secs>
+        // for larger videos. (See execution.js readUserTimeoutSeconds: a declared
+        // `timeout` arg's default becomes the ceiling.)
+        { name: 'timeout', type: 'int', default: 180, help: '命令超时（秒），视频上传/转码慢时可调大' },
     ],
     columns: ['status', 'draft_id'],
     func: async (page, kwargs) => {
@@ -335,6 +464,7 @@ cli({
         await dismissKnownModals(page);
         await page.setFileInput([videoPath], 'input[type="file"]');
         await waitForDraftComposer(page);
+        await waitForVideoUploadComplete(page, visibilityLabel);
         await dismissKnownModals(page);
         if (coverPath) {
             const coverSelector = await prepareCustomCoverInput(page);

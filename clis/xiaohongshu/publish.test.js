@@ -37,7 +37,18 @@ function createPageMock(evaluateResults, overrides = {}) {
 }
 function createConditionalPageMock(evaluateImpl, overrides = {}) {
     const page = createPageMock([], overrides);
-    page.evaluate.mockImplementation(async (js) => evaluateImpl(String(js)));
+    page.evaluate.mockImplementation(async (js) => {
+        const code = String(js);
+        // The publish surface now polls for the image <input> via waitForFileInput()
+        // before uploading (bounded retry against the async-hydrated skeleton). That
+        // probe runs `const sels = ...; return !!document.querySelector(sels);`.
+        // None of these tests exercise the "input never renders" branch (that case
+        // is covered by the array-based mocks), so report the input as present so the
+        // upload step proceeds. Tests can still override by handling it themselves.
+        if (code.includes('!!document.querySelector(sels)'))
+            return true;
+        return evaluateImpl(code);
+    });
     return page;
 }
 describe('xiaohongshu publish', () => {
@@ -382,6 +393,7 @@ describe('xiaohongshu publish', () => {
             'https://creator.xiaohongshu.com/publish/publish?from=menu_left',
             { ok: true, target: '上传图文', text: '上传图文' },
             { state: 'editor_ready', hasTitleInput: true, hasImageInput: true, hasVideoSurface: false },
+            true, // waitForFileInput: image input present
             { ok: true, count: 1 },
             false,
             true, // waitForEditForm: editor appeared
@@ -427,6 +439,7 @@ describe('xiaohongshu publish', () => {
             'https://creator.xiaohongshu.com/publish/publish?from=menu_left',
             { ok: true, target: '上传图文', text: '上传图文' },
             { state: 'editor_ready', hasTitleInput: true, hasImageInput: true, hasVideoSurface: false },
+            true, // waitForFileInput: image input present
             { ok: true, count: 1 },
             false,
             true, // waitForEditForm: editor appeared
@@ -490,6 +503,7 @@ describe('xiaohongshu publish', () => {
             { ok: true, target: '上传图文', text: '上传图文' },
             { state: 'video_surface', hasTitleInput: false, hasImageInput: false, hasVideoSurface: true },
             { state: 'editor_ready', hasTitleInput: true, hasImageInput: true, hasVideoSurface: false },
+            true, // waitForFileInput: image input present
             { ok: true, count: 1 }, // injectImages
             false, // waitForUploads: no progress indicator
             true, // waitForEditForm: editor appeared
@@ -1039,7 +1053,7 @@ describe('xiaohongshu publish 文字配图 flow', () => {
         const rows = await cmd.func(page, { title: 't', content: 'c', 'card-text': '一段卡片', images: jpg });
         expect(setFileInput).toHaveBeenCalledTimes(1);
         expect(setFileInput.mock.calls[0][0]).toEqual([jpg]);
-        expect(setFileInput.mock.calls[0][1]).toEqual(IMAGE_INPUT_SELECTOR_RESULT);
+        expect(setFileInput.mock.calls[0][1]).toEqual(expect.stringContaining(IMAGE_INPUT_SELECTOR_RESULT));
         expect(rows[0].detail).toContain('1张图片');
     });
 

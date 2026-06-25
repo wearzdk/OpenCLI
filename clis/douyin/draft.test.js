@@ -121,6 +121,8 @@ describe('douyin draft registration', () => {
         const page = createPageMock([
             undefined,
             { href: 'https://creator.douyin.com/creator-micro/content/post/video?enter_from=publish_page', ready: true, bodyText: '' },
+            // waitForVideoUploadComplete: composer fully hydrated, save button usable, upload done.
+            { uploading: false, saveEnabled: true, hasSaveBtn: true, hasCaptionEditor: true, hasVisibility: true },
             undefined,
             true,
             true,
@@ -163,6 +165,8 @@ describe('douyin draft registration', () => {
             { href: 'https://creator.douyin.com/creator-micro/content/upload', ready: false, bodyText: '上传中 42%' },
             { href: 'https://creator.douyin.com/creator-micro/content/upload', ready: false, bodyText: '转码中' },
             { href: 'https://creator.douyin.com/creator-micro/content/post/video?enter_from=publish_page', ready: true, bodyText: '' },
+            // waitForVideoUploadComplete returns on first poll once the composer is ready.
+            { uploading: false, saveEnabled: true, hasSaveBtn: true, hasCaptionEditor: true, hasVisibility: true },
             undefined,
             true,
             true,
@@ -195,6 +199,8 @@ describe('douyin draft registration', () => {
         const page = createPageMock([
             undefined,
             { href: 'https://creator.douyin.com/creator-micro/content/post/video?enter_from=publish_page', ready: true, bodyText: '' },
+            // waitForVideoUploadComplete: ready immediately.
+            { uploading: false, saveEnabled: true, hasSaveBtn: true, hasCaptionEditor: true, hasVisibility: true },
             undefined,
             true,
             true,
@@ -215,6 +221,8 @@ describe('douyin draft registration', () => {
         const page = createPageMock([
             undefined,
             { href: 'https://creator.douyin.com/creator-micro/content/post/video?enter_from=publish_page', ready: true, bodyText: '' },
+            // waitForVideoUploadComplete: ready immediately.
+            { uploading: false, saveEnabled: true, hasSaveBtn: true, hasCaptionEditor: true, hasVisibility: true },
             undefined,
             1,
             { ok: false, reason: 'cover-input-pending' },
@@ -262,6 +270,8 @@ describe('douyin draft registration', () => {
         const page = createPageMock([
             undefined,
             { href: 'https://creator.douyin.com/creator-micro/content/post/video?enter_from=publish_page', ready: true, bodyText: '' },
+            // waitForVideoUploadComplete: ready immediately.
+            { uploading: false, saveEnabled: true, hasSaveBtn: true, hasCaptionEditor: true, hasVisibility: true },
             undefined,
             1,
             { ok: true, selector: '[data-opencli-cover-input="1"]' },
@@ -301,6 +311,8 @@ describe('douyin draft registration', () => {
         const page = createPageMock([
             undefined,
             { href: 'https://creator.douyin.com/creator-micro/content/post/video?enter_from=publish_page', ready: true, bodyText: '' },
+            // waitForVideoUploadComplete: ready immediately.
+            { uploading: false, saveEnabled: true, hasSaveBtn: true, hasCaptionEditor: true, hasVisibility: true },
             undefined,
             1,
             { ok: true, selector: '[data-opencli-cover-input="1"]' },

@@ -9,13 +9,21 @@ describe('twitter delete command', () => {
         const page = {
             goto: vi.fn().mockResolvedValue(undefined),
             wait: vi.fn().mockResolvedValue(undefined),
-            evaluate: vi.fn().mockResolvedValue({ ok: true, message: 'Tweet successfully deleted.' }),
+            // The adapter now drives a bounded Node-side poll: each step is a
+            // short evaluate (find-More → click-Delete → click-Confirm) whose
+            // result is checked for `found`. Returning a value that satisfies
+            // `found` on the FIRST probe of every step means no intermediate
+            // `wait(0.5)` sleeps fire, so the only wait calls are the initial
+            // primaryColumn wait and the final post-delete `wait(2)`.
+            evaluate: vi.fn().mockResolvedValue({ article: true, found: true }),
         };
         const result = await cmd.func(page, {
             url: 'https://x.com/alice/status/2040254679301718161?s=20',
         });
         expect(page.goto).toHaveBeenCalledWith('https://x.com/alice/status/2040254679301718161?s=20');
         expect(page.wait).toHaveBeenNthCalledWith(1, { selector: '[data-testid="primaryColumn"]' });
+        // All three step probes succeed on the first try (no poll sleeps), so
+        // the second wait is still the final post-delete settle wait.
         expect(page.wait).toHaveBeenNthCalledWith(2, 2);
         const script = page.evaluate.mock.calls[0][0];
         // Article-scoping must come from the shared helper (not an inline
@@ -42,10 +50,12 @@ describe('twitter delete command', () => {
         const page = {
             goto: vi.fn().mockResolvedValue(undefined),
             wait: vi.fn().mockResolvedValue(undefined),
-            evaluate: vi.fn().mockResolvedValue({
-                ok: false,
-                message: 'Could not find the tweet card matching the requested URL.',
-            }),
+            // The find-More step reports `article: false` when no <article>
+            // matches the requested status id. The bounded poll never sees a
+            // `found` result, exhausts its retries, and the adapter maps the
+            // final `article === false` outcome to the tweet-card-not-found
+            // failure (distinct from the "More button missing" failure).
+            evaluate: vi.fn().mockResolvedValue({ article: false, found: false }),
         };
         const result = await cmd.func(page, {
             url: 'https://x.com/alice/status/2040254679301718161',
@@ -56,7 +66,15 @@ describe('twitter delete command', () => {
                 message: 'Could not find the tweet card matching the requested URL.',
             },
         ]);
-        expect(page.wait).toHaveBeenCalledTimes(1);
+        // The lookup never succeeds, so the find-More step polls to exhaustion:
+        // the initial primaryColumn wait plus one inter-attempt sleep per retry.
+        expect(page.wait).toHaveBeenCalledTimes(13);
+        // Polling must give up at the find-More step — it must NOT proceed to
+        // probe the Delete menu item once the tweet card was never found.
+        expect(page.evaluate).toHaveBeenCalledTimes(12);
+        for (const call of page.evaluate.mock.calls) {
+            expect(call[0]).toContain('__twHasLinkToTarget');
+        }
     });
     it('rejects malformed or off-domain URLs with ArgumentError before navigation', async () => {
         const cmd = getRegistry().get('twitter/delete');

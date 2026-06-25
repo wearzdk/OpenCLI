@@ -110,20 +110,29 @@ cli({
             throw new CommandExecutionError('Not logged into Weibo. Please login at weibo.com in your Chrome browser.');
         }
 
-        // Step 3: Click "发微博" button to open inline compose editor
-        const clickResult = await page.evaluate(`
-            () => {
-                const visible = el => !!el && el.offsetParent !== null && !el.disabled;
-                const buttons = document.querySelectorAll('button[title="发微博"], button[title="写微博"]');
-                for (const btn of buttons) {
-                    if (visible(btn)) {
-                        btn.click();
-                        return { ok: true };
+        // Step 3: Click "发微博" button to open inline compose editor.
+        // The home feed hydrates asynchronously after navigation, so the
+        // compose button may not exist on the first probe under slow renders.
+        // Poll (bounded) until the button is visible & clickable instead of
+        // asserting once. Same probe, same selectors, just more patient.
+        let clickResult = null;
+        for (let i = 0; i < Math.ceil(COMPOSE_TIMEOUT_MS / COMPOSE_POLL_MS); i++) {
+            clickResult = await page.evaluate(`
+                () => {
+                    const visible = el => !!el && el.offsetParent !== null && !el.disabled;
+                    const buttons = document.querySelectorAll('button[title="发微博"], button[title="写微博"]');
+                    for (const btn of buttons) {
+                        if (visible(btn)) {
+                            btn.click();
+                            return { ok: true };
+                        }
                     }
+                    return { ok: false, message: 'Could not find 发微博 button' };
                 }
-                return { ok: false, message: 'Could not find 发微博 button' };
-            }
-        `);
+            `);
+            if (clickResult?.ok) break;
+            await page.wait({ time: COMPOSE_POLL_MS / 1000 });
+        }
         if (!clickResult?.ok) {
             throw new CommandExecutionError(clickResult?.message ?? 'Could not open compose editor.');
         }
@@ -162,13 +171,21 @@ cli({
                 throw new CommandExecutionError('Browser extension does not support file upload. Please update the extension.');
             }
 
-            // Find the file input
-            const fileInputFound = await page.evaluate(`
-                () => {
-                    const input = document.querySelector('input[type="file"][class*="_file_"]');
-                    return !!input;
-                }
-            `);
+            // Find the file input. The compose editor may still be mounting
+            // its image-uploader subtree right after it opens, so the hidden
+            // file <input> can lag behind the textarea. Poll (bounded) for it
+            // rather than asserting once on a slow render. Same selector.
+            let fileInputFound = false;
+            for (let i = 0; i < Math.ceil(COMPOSE_TIMEOUT_MS / COMPOSE_POLL_MS); i++) {
+                fileInputFound = await page.evaluate(`
+                    () => {
+                        const input = document.querySelector('input[type="file"][class*="_file_"]');
+                        return !!input;
+                    }
+                `);
+                if (fileInputFound) break;
+                await page.wait({ time: COMPOSE_POLL_MS / 1000 });
+            }
             if (!fileInputFound) {
                 throw new CommandExecutionError('Could not find image file input on Weibo compose page. UI may have changed.');
             }
@@ -227,26 +244,35 @@ cli({
         }
 
 
-        // Step 7: Click the send button inside the compose editor
-        // Try 发送 first (compose editor's submit), then 发布 (fallback)
+        // Step 7: Click the send button inside the compose editor.
+        // Try 发送 first (compose editor's submit), then 发布 (fallback).
+        // The submit button often stays disabled (and offsetParent-hidden in
+        // some skins) until Weibo validates the freshly inserted text/images,
+        // so a single probe can miss it on slow renders. Poll (bounded) until
+        // a visible & enabled button is found. Same labels, same click.
         await page.wait({ time: 0.5 });
-        const publishResult = await page.evaluate(`
-            () => {
-                const visible = el => !!el && el.offsetParent !== null && !el.disabled;
-                const labels = ['发送', '发布'];
-                for (const label of labels) {
-                    const allBtns = document.querySelectorAll('button, [role="button"]');
-                    for (const btn of allBtns) {
-                        const t = (btn.innerText || btn.textContent || '').trim();
-                        if (t === label && visible(btn)) {
-                            btn.click();
-                            return { ok: true, label };
+        let publishResult = null;
+        for (let i = 0; i < Math.ceil(COMPOSE_TIMEOUT_MS / COMPOSE_POLL_MS); i++) {
+            publishResult = await page.evaluate(`
+                () => {
+                    const visible = el => !!el && el.offsetParent !== null && !el.disabled;
+                    const labels = ['发送', '发布'];
+                    for (const label of labels) {
+                        const allBtns = document.querySelectorAll('button, [role="button"]');
+                        for (const btn of allBtns) {
+                            const t = (btn.innerText || btn.textContent || '').trim();
+                            if (t === label && visible(btn)) {
+                                btn.click();
+                                return { ok: true, label };
+                            }
                         }
                     }
+                    return { ok: false, message: 'Could not find send button' };
                 }
-                return { ok: false, message: 'Could not find send button' };
-            }
-        `);
+            `);
+            if (publishResult?.ok) break;
+            await page.wait({ time: COMPOSE_POLL_MS / 1000 });
+        }
         if (!publishResult?.ok) {
             throw new CommandExecutionError(publishResult?.message ?? 'Could not click publish.');
         }

@@ -20,6 +20,17 @@ cli({
     func: async (page, kwargs) => {
         // 1. 导航到帖子详情页
         await page.goto(`https://web.okjike.com/originalPost/${kwargs.id}`);
+        // 详情页 SPA 异步 hydrate，点赞按钮一次性 querySelector 会和渲染竞速，慢渲染下
+        // 误报"未找到点赞按钮"。改为有界轮询等待点赞按钮出现，再走原有的一次性点击
+        // 逻辑（选择器/控制流不变）。
+        for (let i = 0; i < 30; i++) {
+            const ready = await page.evaluate(`(() => {
+        return !!document.querySelector('[class*="_likeButton_"]');
+      })()`);
+            if (ready)
+                break;
+            await page.wait(0.5);
+        }
         // 2. 找到点赞按钮并点击
         const result = await page.evaluate(`(async () => {
       try {

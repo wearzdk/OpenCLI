@@ -205,7 +205,19 @@ function buildResolveCurrentUserIdentityJs() {
   })()`;
 }
 export async function resolveCurrentUserIdentity(page) {
-    const identity = await page.evaluate(buildResolveCurrentUserIdentityJs());
+    // The identity probe reads __INITIAL_STATE__ / nav DOM, both of which hydrate
+    // asynchronously after navigation. A single post-wait read races that hydration
+    // and false-positives as "could not resolve identity" on slow renders. Poll the
+    // (idempotent, read-only) probe with a bounded budget instead of giving up on
+    // the first miss; only fail once every attempt within the window comes up empty.
+    let identity = null;
+    for (let i = 0; i < 30; i++) {
+        identity = await page.evaluate(buildResolveCurrentUserIdentityJs());
+        if (identity?.slug) {
+            break;
+        }
+        await page.wait({ time: 0.5 });
+    }
     if (!identity?.slug) {
         throw new CliError('ACTION_NOT_AVAILABLE', 'Could not resolve the logged-in Zhihu user identity before write');
     }

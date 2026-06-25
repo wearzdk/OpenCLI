@@ -175,7 +175,9 @@ cli({
                 throw new AuthRequiredError('creator.xiaohongshu.com');
             }
             // Step 1: ensure 已发布 tab is active (delete only exposed there).
-            const tabClicked = requireEvaluateBoolean(unwrapEvaluateResult(await page.evaluate(`
+            // The note-manager grid hydrates asynchronously — a single post-settle
+            // scan races the skeleton and wrongly reports "UI changed". Poll for it.
+            const PUBLISHED_TAB_SCRIPT = `
       () => {
         const isVisible = (el) => !!el && el.offsetParent !== null;
         for (const el of document.querySelectorAll('a, button, [role="tab"], div')) {
@@ -187,7 +189,14 @@ cli({
         }
         return false;
       }
-    `)), 'published-tab');
+    `;
+            let tabClicked = false;
+            for (let i = 0; i < 30; i++) {
+                tabClicked = requireEvaluateBoolean(unwrapEvaluateResult(await page.evaluate(PUBLISHED_TAB_SCRIPT)), 'published-tab');
+                if (tabClicked)
+                    break;
+                await page.wait({ time: 0.5 });
+            }
             if (!tabClicked) {
                 throw new CommandExecutionError('xiaohongshu/delete-note: 已发布 tab not found on note-manager; xhs creator UI may have changed.');
             }

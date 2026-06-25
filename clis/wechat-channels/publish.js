@@ -23,7 +23,6 @@ import { ArgumentError, AuthRequiredError, CommandExecutionError } from '@jackwe
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const PUBLISH_URL = 'https://channels.weixin.qq.com/platform/post/create';
-const LOGIN_PATH_FRAGMENT = 'login';
 
 // Title: "短标题" field visible in the form (from screenshot)
 const TITLE_SELECTORS = [
@@ -185,12 +184,37 @@ async function clickUploadTrigger(page) {
   return clicked;
 }
 
+// ── Helper: wait for the (shadow-DOM) file input to render ───────────────────
+// The creator center renders the upload <input> asynchronously after the wujie
+// micro-frontend bootstraps. A one-shot deepQuery races that render on slow
+// networks and aborts with "No file input found". Poll until it appears.
+async function waitForFileInput(page, maxWaitMs = 15_000) {
+  const pollMs = 500;
+  const maxAttempts = Math.max(1, Math.ceil(maxWaitMs / pollMs));
+  for (let i = 0; i < maxAttempts; i++) {
+    const found = await evalPage(page, `
+      (() => {
+        ${DEEP_QUERY_FN}
+        var inputSels = ['input[type="file"][accept*="video"]', 'input[type="file"]'];
+        for (var i = 0; i < inputSels.length; i++) {
+          if (deepQuery(inputSels[i])) return true;
+        }
+        return false;
+      })()
+    `);
+    if (found) return true;
+    if (i < maxAttempts - 1) await page.wait({ time: pollMs / 1000 });
+  }
+  return false;
+}
+
 // ── Helper: upload video file ────────────────────────────────────────────────
 async function uploadFile(page, absPath) {
   // Strategy 1: page.setFileInput — works if input is in main document
   if (page.setFileInput) {
     await clickUploadTrigger(page);
     await page.wait({ time: 1 });
+    await waitForFileInput(page); // let the input finish rendering before probing
     for (const sel of ['input[type="file"][accept*="video"]', 'input[type="file"]']) {
       try {
         await page.setFileInput([absPath], sel);
@@ -223,6 +247,7 @@ async function uploadFile(page, absPath) {
   // Trigger click + assemble + set on shadow DOM input
   await clickUploadTrigger(page);
   await page.wait({ time: 0.5 });
+  await waitForFileInput(page); // poll until the shadow-DOM input renders before injecting
 
   const result = await evalPage(page, `
     (function(params) {
@@ -316,7 +341,13 @@ async function waitForUploadDone(page, fileName, maxMs = 180_000) {
 
 // ── Helper: fill text field (with shadow DOM traversal) ─────────────────────
 async function fillField(page, selectors, text, fieldName) {
-  const result = await evalPage(page, `
+  // The form fields hydrate asynchronously inside the wujie shadow DOM; a
+  // one-shot probe races that render on slow networks. Retry the fill (an
+  // idempotent overwrite) until the field is found before declaring failure.
+  const maxAttempts = 30;
+  let result;
+  for (let i = 0; i < maxAttempts; i++) {
+    result = await evalPage(page, `
     (function(selectors, text) {
       ${DEEP_QUERY_FN}
 
@@ -364,6 +395,9 @@ async function fillField(page, selectors, text, fieldName) {
       return { ok: actual.indexOf(text) >= 0, sel: foundSel, actual: actual };
     })(${JSON.stringify(selectors)}, ${JSON.stringify(text)})
   `);
+    if (result?.ok) break;
+    if (i < maxAttempts - 1) await page.wait({ time: 0.5 });
+  }
 
   if (!result?.ok) {
     await page.screenshot({ path: `/tmp/wechat-channels_publish_${fieldName}_debug.png` });
@@ -521,7 +555,14 @@ async function clickPublish(page, isDraft) {
     ? ['存草稿', '保存草稿', '草稿']
     : ['发表', '发布'];
 
-  const clicked = await evalPage(page, `
+  // The submit button stays disabled until the form finishes validating
+  // (upload settle, fields committed) and may render late inside the shadow
+  // DOM. A one-shot probe races that, so poll for an enabled matching button
+  // before giving up.
+  const maxAttempts = 30;
+  let clicked;
+  for (let i = 0; i < maxAttempts; i++) {
+    clicked = await evalPage(page, `
     (function(labels) {
       ${DEEP_QUERY_FN}
       var btns = deepQueryAll('button');
@@ -542,6 +583,9 @@ async function clickPublish(page, isDraft) {
       return { ok: false };
     })(${JSON.stringify(labels)})
   `);
+    if (clicked?.ok) break;
+    if (i < maxAttempts - 1) await page.wait({ time: 0.5 });
+  }
 
   if (!clicked?.ok) {
     await page.screenshot({ path: '/tmp/wechat-channels_publish_submit_debug.png' });
@@ -592,11 +636,17 @@ cli({
     await page.wait({ time: 4 }); // wujie needs extra time to bootstrap
 
     // ── 3. Login check — fallback: navigate to login page and wait ───────
+    // 未登录时视频号不一定跳到 login.html：常见的是被打回 “视频号助手” 落地页（URL 为 / 根路径，
+    // 不含 'login' 字样）。只看 'login' 子串会漏判，导致后续在未登录落地页上找不到文件 input、
+    // 误报 “No file input found”。判定标准改为：URL 是否仍停在发布页路径 /platform/post/create；
+    // 一旦被重定向走（login.html 或落地页）即视为未登录。
     {
+      const onPublishPage = (url) => typeof url === 'string' && url.includes('/platform/post/create');
       const urlAfterNav = await evalPage(page, '() => location.href');
-      if (urlAfterNav.includes(LOGIN_PATH_FRAGMENT)) {
+      if (!onPublishPage(urlAfterNav)) {
         process.stderr.write(
-          '\n⚠️  未登录视频号。已跳转到登录页，请在 Chrome 中扫码登录...\n' +
+          '\n⚠️  未登录视频号（已被重定向离开发布页）。请在 Chrome 中扫码登录...\n' +
+          '   当前地址: ' + urlAfterNav + '\n' +
           '   登录完成后将自动继续发布。\n\n'
         );
 
@@ -604,8 +654,11 @@ cli({
         let loggedIn = false;
         while (Date.now() < loginDeadline) {
           await page.wait({ time: 3 });
+          // 扫码成功后助手页不一定自动跳回发布页，主动回到发布页再判定
+          await page.goto(PUBLISH_URL);
+          await page.wait({ time: 2 });
           const url = await evalPage(page, '() => location.href');
-          if (!url.includes(LOGIN_PATH_FRAGMENT)) {
+          if (onPublishPage(url)) {
             loggedIn = true;
             break;
           }
@@ -675,13 +728,20 @@ cli({
 
     // ── 10. Verify result ─────────────────────────────────────────────────
     await page.wait({ time: 4 });
-    const finalUrl = await evalPage(page, '() => location.href');
 
     const successMarkers = isDraft
       ? ['草稿已保存', '暂存成功', '保存成功']
       : ['已发表', '发布成功', '发表成功', '审核中'];
 
-    const successMsg = await evalPage(page, `
+    // The success toast / redirect to the post list can lag the submit click on
+    // slow networks; a one-shot read races it and false-fails. Poll for the
+    // success signal before declaring failure.
+    let finalUrl = '';
+    let successMsg = '';
+    let isSuccess = false;
+    for (let i = 0; i < 30; i++) {
+      finalUrl = await evalPage(page, '() => location.href');
+      successMsg = await evalPage(page, `
       (function(markers) {
         ${DEEP_QUERY_FN}
         var all = deepQueryAll('*');
@@ -697,8 +757,11 @@ cli({
         return '';
       })(${JSON.stringify(successMarkers)})
     `);
+      isSuccess = submitSucceeded({ isDraft, finalUrl, successMsg });
+      if (isSuccess) break;
+      await page.wait({ time: 0.5 });
+    }
 
-    const isSuccess = submitSucceeded({ isDraft, finalUrl, successMsg });
     if (!isSuccess) {
       await page.screenshot({ path: '/tmp/wechat-channels_publish_result_debug.png' });
       throw new CommandExecutionError(

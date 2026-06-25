@@ -11853,6 +11853,13 @@
           "friends",
           "private"
         ]
+      },
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 180,
+        "required": false,
+        "help": "命令超时（秒），视频上传/转码慢时可调大"
       }
     ],
     "columns": [

@@ -102,9 +102,14 @@ describe('xiaohongshu delete-note command', () => {
   });
 
   it('throws CommandExecutionError when 已发布 tab cannot be clicked (UI drift)', async () => {
+    // The published-tab detection is now bounded-poll (up to 30 attempts): the row
+    // grid hydrates async, so a single miss no longer means failure. Keep returning
+    // false for the entire poll window so the loop exhausts and the adapter reports
+    // the tab as truly absent.
+    const tabProbes = Array(30).fill(false);
     const page = makePage([
       'https://creator.xiaohongshu.com/new/note-manager',
-      false, // tab click returns false
+      ...tabProbes, // tab click keeps returning false across the whole poll window
     ]);
     await expect(getCommand().func(page, { 'note-id': validId })).rejects.toThrowError(/已发布 tab not found/);
   });

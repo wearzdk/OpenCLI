@@ -142,6 +142,31 @@ const IMAGE_INPUT_SELECTOR = 'input[type="file"][accept*="image"],'
     + 'input[type="file"][accept*=".gif"],'
     + 'input[type="file"][accept*=".webp"]';
 /**
+ * Poll until the image-accepting file input is actually present in the DOM.
+ *
+ * The creator-center publish surface hydrates asynchronously — right after
+ * navigation the main area is still a skeleton, so a one-shot querySelector
+ * races the render and (on a slightly slow network) finds nothing, aborting
+ * the whole publish with "No file input found on page". Wait for it instead.
+ */
+async function waitForFileInput(page, maxWaitMs = 15000) {
+    const pollMs = 500;
+    const maxAttempts = Math.max(1, Math.ceil(maxWaitMs / pollMs));
+    for (let i = 0; i < maxAttempts; i++) {
+        const found = await page.evaluate(`
+      (() => {
+        const sels = ${JSON.stringify(IMAGE_INPUT_SELECTOR)};
+        return !!document.querySelector(sels);
+      })()
+    `);
+        if (found)
+            return true;
+        if (i < maxAttempts - 1)
+            await page.wait({ time: pollMs / 1000 });
+    }
+    return false;
+}
+/**
  * Upload images via CDP DOM.setFileInputFiles — Chrome reads files directly
  * from the local filesystem, avoiding base64 payload size limits.
  *
@@ -149,21 +174,16 @@ const IMAGE_INPUT_SELECTOR = 'input[type="file"][accept*="image"],'
  * does not support set-file-input (e.g. older extension version).
  */
 async function uploadImages(page, absPaths) {
+    // The publish surface renders the upload <input> asynchronously; wait for it
+    // before probing, otherwise we lose the race against the skeleton screen.
+    const inputReady = await waitForFileInput(page);
+    if (!inputReady) {
+        return { ok: false, count: 0, error: 'No file input found on page (waited 15s; publish surface did not finish rendering)' };
+    }
     // ── Primary: CDP DOM.setFileInputFiles ──────────────────────────────
     if (page.setFileInput) {
         try {
-            // Find image-accepting file input on the page
-            const selector = await page.evaluate(`
-        (() => {
-          const sels = ${JSON.stringify(IMAGE_INPUT_SELECTOR)};
-          const el = document.querySelector(sels);
-          return el ? sels : null;
-        })()
-      `);
-            if (!selector) {
-                return { ok: false, count: 0, error: 'No file input found on page' };
-            }
-            await page.setFileInput(absPaths, selector);
+            await page.setFileInput(absPaths, IMAGE_INPUT_SELECTOR);
             return { ok: true, count: absPaths.length };
         }
         catch (err) {
@@ -1187,12 +1207,22 @@ cli({
         const absImagePaths = validateImagePaths(imagePaths);
         // ── Step 1: Navigate to publish page ──────────────────────────────────────
         await page.goto(PUBLISH_URL);
-        await page.wait({ time: 3 });
+        // The publish SPA can bounce through a short redirect chain on load; a
+        // single post-3s URL snapshot races that and false-positives as
+        // "session expired". Poll until the URL settles on the creator domain.
+        let pageUrl = '';
+        for (let i = 0; i < 30; i++) {
+            await page.wait({ time: 0.5 });
+            pageUrl = await page.evaluate('() => location.href');
+            if (pageUrl.includes('creator.xiaohongshu.com'))
+                break;
+        }
         // Verify we landed on the creator site (not redirected to login)
-        const pageUrl = await page.evaluate('() => location.href');
         if (!pageUrl.includes('creator.xiaohongshu.com')) {
-            throw new Error('Redirected away from creator center — session may have expired. ' +
-                'Re-capture browser login via: opencli xiaohongshu creator-profile');
+            await page.screenshot({ path: '/tmp/xhs_publish_redirect_debug.png' });
+            throw new Error(`Redirected away from creator center (landed on ${pageUrl}) — session may have expired. ` +
+                'Re-capture browser login via: opencli xiaohongshu creator-profile. ' +
+                'Debug screenshot: /tmp/xhs_publish_redirect_debug.png');
         }
         // ── Step 2: Select 图文 (image+text) note type if tabs are present ─────────
         const tabResult = await selectImageTextTab(page);

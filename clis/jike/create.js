@@ -20,6 +20,24 @@ cli({
     func: async (page, kwargs) => {
         // 1. 导航到首页（有内联发帖框）
         await page.goto('https://web.okjike.com');
+        // 首页是 SPA，导航后发帖框异步 hydrate。一次性 querySelector 会和骨架屏
+        // 竞速，慢渲染/慢网络下找不到输入框即误报"未找到发帖输入框"。改为有界轮询
+        // 等待发帖输入框出现，再走原有的一次性输入逻辑（选择器/控制流不变）。
+        for (let i = 0; i < 30; i++) {
+            const ready = await page.evaluate(`(() => {
+        const form = document.querySelector('[class*="_postForm_"]');
+        const editor = form
+          ? form.querySelector('[contenteditable="true"]')
+          : document.querySelector('[contenteditable="true"]');
+        const textarea = form
+          ? form.querySelector('textarea')
+          : document.querySelector('textarea');
+        return !!(editor || textarea);
+      })()`);
+            if (ready)
+                break;
+            await page.wait(0.5);
+        }
         // 2. 在发帖框中输入文本
         const textResult = await page.evaluate(`(async () => {
       try {
@@ -71,6 +89,20 @@ cli({
     })()`);
         if (!textResult.ok) {
             return [{ status: 'failed', message: textResult.message }];
+        }
+        // 输入后"发送"按钮从禁用变为可用需要一点时间（React 状态更新）。一次性
+        // 探测会和这个状态切换竞速，慢机器上误报"未找到可用的发送按钮"。改为有界
+        // 轮询等待可用发送按钮出现，再走原有的一次性点击逻辑（选择器/控制流不变）。
+        for (let i = 0; i < 30; i++) {
+            const ready = await page.evaluate(`(() => {
+        return Array.from(document.querySelectorAll('button')).some(btn => {
+          const text = btn.textContent?.trim() || '';
+          return (text === '发送' || text === '发布') && !btn.disabled;
+        });
+      })()`);
+            if (ready)
+                break;
+            await page.wait(0.5);
         }
         // 3. 点击"发送"按钮
         const submitResult = await page.evaluate(`(async () => {

@@ -75,8 +75,16 @@ async function deleteViaCreatorManage(page, workId) {
           if (!deleteButton) return { ok: false, reason: 'delete_button_not_found', aweme_id: target.item.aweme_id, item_id: target.item.item_id, index: target.index, cardCount: cards.length };
           deleteButton.click();
           await sleep(800);
-          const confirmButton = Array.from(document.querySelectorAll('button,[role="button"]'))
-            .find((element) => ['确定', '确认', '删除'].includes(normalize(textOf(element))));
+          // The confirmation modal renders asynchronously after the delete click;
+          // a single probe can race that render and false-fail with
+          // confirm_button_not_found. Poll a bounded number of times for it.
+          let confirmButton = null;
+          for (let confirmAttempt = 0; confirmAttempt < 20; confirmAttempt += 1) {
+            confirmButton = Array.from(document.querySelectorAll('button,[role="button"]'))
+              .find((element) => ['确定', '确认', '删除'].includes(normalize(textOf(element))));
+            if (confirmButton) break;
+            await sleep(500);
+          }
           if (!confirmButton) return { ok: false, reason: 'confirm_button_not_found', aweme_id: target.item.aweme_id, item_id: target.item.item_id };
           confirmButton.click();
           for (let wait = 0; wait < 20; wait += 1) {
