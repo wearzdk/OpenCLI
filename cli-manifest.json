@@ -3660,6 +3660,40 @@
   },
   {
     "site": "bilibili",
+    "name": "dynamic-post",
+    "description": "发布 B站动态（纯文本，官方 API，需登录）",
+    "access": "write",
+    "domain": "www.bilibili.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "text",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Dynamic text content"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "Actually publish. Without it the command refuses to write."
+      }
+    ],
+    "columns": [
+      "status",
+      "dynamic_id",
+      "text",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "bilibili/dynamic-post.js",
+    "sourceFile": "bilibili/dynamic-post.js",
+    "navigateBefore": "https://www.bilibili.com"
+  },
+  {
+    "site": "bilibili",
     "name": "favorite",
     "description": "我的收藏夹",
     "access": "write",
@@ -43198,6 +43232,68 @@
   },
   {
     "site": "zhihu",
+    "name": "article",
+    "description": "Publish a Zhihu article (文章/专栏)",
+    "access": "write",
+    "domain": "zhuanlan.zhihu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Article title"
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "Article body (plain text by default; pass --html for raw HTML)"
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "Article body file path (UTF-8)"
+      },
+      {
+        "name": "html",
+        "type": "boolean",
+        "required": false,
+        "help": "Treat body as raw HTML (default: plain text — escaped, newlines become paragraphs)"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "required": false,
+        "help": "Save as draft only; do not publish"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "Actually create/publish. Without it the command refuses to write."
+      }
+    ],
+    "columns": [
+      "status",
+      "outcome",
+      "message",
+      "target_type",
+      "target",
+      "created_target",
+      "created_url"
+    ],
+    "type": "js",
+    "modulePath": "zhihu/article.js",
+    "sourceFile": "zhihu/article.js",
+    "navigateBefore": "https://zhuanlan.zhihu.com"
+  },
+  {
+    "site": "zhihu",
     "name": "collection",
     "description": "知乎收藏夹内容列表（需要登录）",
     "access": "read",
@@ -43614,6 +43710,50 @@
     "navigateBefore": false,
     "siteSession": "persistent",
     "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "zhihu",
+    "name": "pin",
+    "description": "Publish a Zhihu pin (想法/short post)",
+    "access": "write",
+    "domain": "www.zhihu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "Pin text content"
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "Pin text file path (UTF-8)"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "Actually publish the pin. Without it the command refuses to write."
+      }
+    ],
+    "columns": [
+      "status",
+      "outcome",
+      "message",
+      "target_type",
+      "target",
+      "created_target",
+      "created_url",
+      "author_identity"
+    ],
+    "type": "js",
+    "modulePath": "zhihu/pin.js",
+    "sourceFile": "zhihu/pin.js",
+    "navigateBefore": "https://www.zhihu.com"
   },
   {
     "site": "zhihu",
