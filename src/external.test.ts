@@ -5,13 +5,15 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 
-const { mockExecFileSync, mockPlatform } = vi.hoisted(() => ({
+const { mockExecFileSync, mockSpawnSync, mockPlatform, mockEnforceRateLimit } = vi.hoisted(() => ({
   mockExecFileSync: vi.fn(),
+  mockSpawnSync: vi.fn(),
   mockPlatform: vi.fn(() => 'darwin'),
+  mockEnforceRateLimit: vi.fn(),
 }));
 
 vi.mock('node:child_process', () => ({
-  spawnSync: vi.fn(),
+  spawnSync: mockSpawnSync,
   execFileSync: mockExecFileSync,
 }));
 
@@ -23,6 +25,10 @@ vi.mock('node:os', async () => {
   };
 });
 
+vi.mock('./rate-limit.js', () => ({
+  enforceRateLimit: mockEnforceRateLimit,
+}));
+
 import {
   executeExternalCli,
   formatExternalCliLabel,
@@ -30,8 +36,7 @@ import {
   parseCommand,
   type ExternalCliConfig,
 } from './external.js';
-
-const mockSpawnSync = vi.mocked(spawnSync);
+import { RateLimitError } from './errors.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -211,5 +216,41 @@ describe('executeExternalCli', () => {
     executeExternalCli('gh', ['repo', 'list'], registry);
 
     expect(process.exitCode).toBe(1); // EXIT_CODES.GENERIC_ERROR
+  });
+});
+
+describe('executeExternalCli rate limits', () => {
+  beforeEach(() => {
+    mockExecFileSync.mockReset();
+    mockSpawnSync.mockReset();
+    mockEnforceRateLimit.mockReset();
+    process.exitCode = undefined;
+  });
+
+  it('checks the external command name before binary lookup and spawn', () => {
+    mockEnforceRateLimit.mockImplementationOnce(() => {
+      throw new RateLimitError('gh', 60_000, '/tmp/rate-limits.yaml');
+    });
+
+    expect(() => executeExternalCli('gh', ['issue', 'list'], [
+      { name: 'gh', binary: 'gh' },
+    ])).toThrow(RateLimitError);
+
+    expect(mockEnforceRateLimit).toHaveBeenCalledWith('gh');
+    expect(mockExecFileSync).not.toHaveBeenCalled();
+    expect(mockSpawnSync).not.toHaveBeenCalled();
+  });
+
+  it('spawns the binary when the command is under its limit', () => {
+    mockExecFileSync.mockReturnValue(Buffer.from('/usr/bin/gh'));
+    mockSpawnSync.mockReturnValue({ status: 0, error: undefined });
+
+    executeExternalCli('gh', ['issue', 'list'], [
+      { name: 'gh', binary: 'gh' },
+    ]);
+
+    expect(mockEnforceRateLimit).toHaveBeenCalledWith('gh');
+    expect(mockSpawnSync).toHaveBeenCalledWith('gh', ['issue', 'list'], { stdio: 'inherit' });
+    expect(process.exitCode).toBe(0);
   });
 });
