@@ -1006,23 +1006,25 @@ async function removeLeaseSession(leaseKey) {
   scheduleIdleAlarm(leaseKey, IDLE_TIMEOUT_NONE);
   await persistRuntimeState();
 }
-function resetWindowIdleTimer(leaseKey) {
+function resetWindowIdleTimer(leaseKey, remainingMs) {
   const session = automationSessions.get(leaseKey);
   if (!session) return;
   if (session.idleTimer) clearTimeout(session.idleTimer);
   const timeout = getIdleTimeout(leaseKey);
-  scheduleIdleAlarm(leaseKey, timeout);
   if (timeout <= 0) {
+    scheduleIdleAlarm(leaseKey, timeout);
     session.idleTimer = null;
     session.idleDeadlineAt = 0;
     void persistRuntimeState();
     return;
   }
-  session.idleDeadlineAt = Date.now() + timeout;
+  const interval = remainingMs === void 0 ? timeout : Math.max(0, Math.min(remainingMs, timeout));
+  scheduleIdleAlarm(leaseKey, interval);
+  session.idleDeadlineAt = Date.now() + interval;
   void persistRuntimeState();
   session.idleTimer = setTimeout(async () => {
     await releaseLease(leaseKey, "idle timeout");
-  }, timeout);
+  }, interval);
 }
 function getOwnedContainerGroupTitles(role) {
   return role === "automation" ? [] : [CONTAINER_TAB_GROUP_TITLE.interactive];
@@ -2181,7 +2183,7 @@ async function reconcileTargetLeaseRegistry() {
         if (remaining <= 0) {
           await releaseLease(leaseKey, "reconciled idle expiry");
         } else {
-          resetWindowIdleTimer(leaseKey);
+          resetWindowIdleTimer(leaseKey, remaining);
         }
       }
     } catch {
