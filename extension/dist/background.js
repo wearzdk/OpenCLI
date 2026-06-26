@@ -95,6 +95,15 @@ async function ensureAttached(tabId, aggressiveRetry = false) {
     } catch {
     }
   }
+  try {
+    await chrome.debugger.sendCommand({ tabId }, "Emulation.setPageVisibilityState", {
+      visibilityState: "visible"
+    });
+    await chrome.debugger.sendCommand({ tabId }, "Emulation.setFocusEmulationEnabled", {
+      enabled: true
+    });
+  } catch {
+  }
 }
 async function evaluate(tabId, expression, aggressiveRetry = false) {
   const MAX_EVAL_RETRIES = aggressiveRetry ? 3 : 2;
@@ -1611,6 +1620,46 @@ async function resolveCommandTabId(cmd) {
   return void 0;
 }
 async function resolveTab(tabId, leaseKey, initialUrl) {
+  const resolved = await resolveTabInternal(tabId, leaseKey, initialUrl);
+  if (getWindowMode(leaseKey) === "foreground" && resolved.tabId !== void 0) {
+    try {
+      if (typeof chrome.tabs?.update === "function") {
+        await chrome.tabs.update(resolved.tabId, { active: true });
+      }
+      const tab = resolved.tab || (typeof chrome.tabs?.get === "function" ? await chrome.tabs.get(resolved.tabId) : null);
+      if (tab && typeof tab.windowId === "number" && typeof chrome.windows?.update === "function") {
+        let stateUpdate = {};
+        if (typeof chrome.windows?.get === "function") {
+          try {
+            const win = await chrome.windows.get(tab.windowId);
+            if (win.state === "minimized") {
+              stateUpdate.state = "normal";
+            }
+          } catch {
+          }
+        }
+        await chrome.windows.update(tab.windowId, { focused: true, ...stateUpdate });
+      }
+      if (typeof chrome.debugger?.sendCommand === "function") {
+        try {
+          await ensureAttached(resolved.tabId);
+          await chrome.debugger.sendCommand({ tabId: resolved.tabId }, "Emulation.setPageVisibilityState", {
+            visibilityState: "visible"
+          });
+          await chrome.debugger.sendCommand({ tabId: resolved.tabId }, "Emulation.setFocusEmulationEnabled", {
+            enabled: true
+          });
+        } catch (cdpErr) {
+          console.warn(`[opencli] Failed to set CDP visibility/focus emulation: ${cdpErr}`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[opencli] Failed to focus tab/window: ${err}`);
+    }
+  }
+  return resolved;
+}
+async function resolveTabInternal(tabId, leaseKey, initialUrl) {
   const existingSession = automationSessions.get(leaseKey);
   if (tabId !== void 0) {
     try {

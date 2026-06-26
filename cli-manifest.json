@@ -21047,6 +21047,78 @@
         "default": 5,
         "required": false,
         "help": "Maximum people to return (1-10); each query counts toward LinkedIn's monthly CUL"
+      },
+      {
+        "name": "first-name",
+        "type": "string",
+        "required": false,
+        "help": "Filter to people whose first name matches this text (LinkedIn KEYWORDS / FIRST NAME filter)."
+      },
+      {
+        "name": "last-name",
+        "type": "string",
+        "required": false,
+        "help": "Filter to people whose last name matches this text (LinkedIn KEYWORDS / LAST NAME filter)."
+      },
+      {
+        "name": "title",
+        "type": "string",
+        "required": false,
+        "help": "Filter to people whose current title contains this text (LinkedIn KEYWORDS / TITLE filter)."
+      },
+      {
+        "name": "school-keyword",
+        "type": "string",
+        "required": false,
+        "help": "Free-text school filter (LinkedIn SCHOOL filter, name match)."
+      },
+      {
+        "name": "network",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated connection degrees: 1, 2, 3 (where 3 means 3rd+). E.g. \"1,2\" for 1st and 2nd-degree only."
+      },
+      {
+        "name": "profile-language",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated ISO 639-1 codes for profile language, e.g. \"en,fr\"."
+      },
+      {
+        "name": "open-to",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated open-to values: proBono, boardMember."
+      },
+      {
+        "name": "current-company-id",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated LinkedIn company IDs for CURRENT COMPANY filter (e.g. \"1441\" for Google). To find an ID: visit the company's LinkedIn URL — `/company/<slug>/` — then open Network tools, or click the filter chip on a search results page and read the URL's `currentCompany` param. A full URN like `urn:li:fs_company:1441` is also accepted."
+      },
+      {
+        "name": "past-company-id",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated LinkedIn company IDs for PAST COMPANY filter. Same lookup pattern as --current-company-id."
+      },
+      {
+        "name": "industry-id",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated LinkedIn industry IDs (e.g. \"4\" for Computer Software). Apply the filter once via the LinkedIn UI and read the URL's `industry` param to discover IDs."
+      },
+      {
+        "name": "location-id",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated LinkedIn location IDs (geoUrn numeric tail; e.g. \"105214831\" for Bengaluru area). Apply the location filter once via UI and read the URL's `geoUrn` param."
+      },
+      {
+        "name": "school-id",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated LinkedIn school IDs (numeric tail of urn:li:fs_school:<id>). For free-text school name matching, use --school-keyword instead."
       }
     ],
     "columns": [
