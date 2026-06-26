@@ -177,6 +177,19 @@ export async function ensureAttached(tabId: number, aggressiveRetry: boolean = f
       // the next start-capture re-arms cleanly.
     }
   }
+
+  // Keep the inspected tab treated as foreground so background-page throttling
+  // doesn't stall timers / network while CDP automation drives it.
+  try {
+    await chrome.debugger.sendCommand({ tabId }, 'Emulation.setPageVisibilityState', {
+      visibilityState: 'visible',
+    });
+    await chrome.debugger.sendCommand({ tabId }, 'Emulation.setFocusEmulationEnabled', {
+      enabled: true,
+    });
+  } catch {
+    // Best effort
+  }
 }
 
 export async function evaluate(tabId: number, expression: string, aggressiveRetry: boolean = false): Promise<unknown> {
