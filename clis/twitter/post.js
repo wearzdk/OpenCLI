@@ -122,25 +122,12 @@ async function insertComposerText(page, text) {
     const focusResult = await focusComposer(page);
     if (!focusResult?.ok) return focusResult;
 
-    // Neutralize beforeunload BEFORE inserting text. X's /compose/post can fire
-    // a "Leave page?" beforeunload dialog during/after text insertion (notably
-    // when the text contains a URL that X unfurls). While that dialog is open,
-    // page JS execution is SUSPENDED, so the subsequent verifyComposerText
-    // evaluate (a setTimeout poll loop) never advances — it hangs until the CDP
-    // target is detached and the page falls to about:blank. Strip the handler so
-    // the composer stays put and JS keeps running. Must run before nativeType so
-    // it is in place before any dialog can appear.
-    try {
-        await page.evaluate(`(() => {
-            window.onbeforeunload = null;
-            window.addEventListener('beforeunload', (e) => {
-                e.stopImmediatePropagation();
-                e.preventDefault();
-                delete e.returnValue;
-            }, true);
-            return true;
-        })()`);
-    } catch { /* non-fatal: best-effort hardening */ }
+    // beforeunload neutralization is handled globally by stealth.ts (#14): a
+    // capturing-phase swallow + no-op onbeforeunload setter injected on every
+    // nav, which also covers x.com re-registering the handler after media is
+    // staged. The per-command strip that PR #1972 also added here was redundant
+    // (the no-op setter already neutralizes the assignment) and inserted an
+    // extra page.evaluate that desynced the composer flow, so it is dropped.
 
     const nativeInserters = [
         page.nativeType?.bind(page),
