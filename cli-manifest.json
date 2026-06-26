@@ -3030,6 +3030,87 @@
     "sourceFile": "baidu-scholar/search.js"
   },
   {
+    "site": "baijiahao",
+    "name": "article",
+    "description": "发布百家号文章（支持保存草稿）。正文默认 Markdown；图片自动转存到百家号图床。",
+    "access": "write",
+    "domain": "baijiahao.baidu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "文章标题"
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "文章正文（默认 Markdown；传 --html 则视为原始 HTML）"
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "正文文件路径（UTF-8，默认 Markdown）"
+      },
+      {
+        "name": "html",
+        "type": "boolean",
+        "required": false,
+        "help": "将正文视为原始 HTML 而非 Markdown"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "required": false,
+        "help": "仅保存草稿（百家号暂只支持草稿模式，此参数保留向后兼容）"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "真正执行写操作。不加此参数时命令拒绝写入。"
+      }
+    ],
+    "columns": [
+      "status",
+      "outcome",
+      "message",
+      "target_type",
+      "target",
+      "created_target",
+      "created_url"
+    ],
+    "type": "js",
+    "modulePath": "baijiahao/article.js",
+    "sourceFile": "baijiahao/article.js",
+    "navigateBefore": "https://baijiahao.baidu.com"
+  },
+  {
+    "site": "baijiahao",
+    "name": "whoami",
+    "description": "检测百家号当前登录状态，返回账号信息。",
+    "access": "read",
+    "domain": "baijiahao.baidu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "baijiahao/whoami.js",
+    "sourceFile": "baijiahao/whoami.js",
+    "navigateBefore": "https://baijiahao.baidu.com"
+  },
+  {
     "site": "band",
     "name": "bands",
     "description": "List all Bands you belong to",
@@ -3481,6 +3562,68 @@
     "type": "js",
     "modulePath": "bbc/topic.js",
     "sourceFile": "bbc/topic.js"
+  },
+  {
+    "site": "bilibili",
+    "name": "article",
+    "description": "发布 B站专栏长文（opus/article）。正文默认 Markdown，图片自动转存至 B站图床，始终以草稿保存（需在创作中心手动发布）。",
+    "access": "write",
+    "domain": "member.bilibili.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "文章标题"
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "正文（默认 Markdown；加 --html 则作 HTML 处理）"
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "正文文件路径（UTF-8，默认 Markdown）"
+      },
+      {
+        "name": "html",
+        "type": "boolean",
+        "required": false,
+        "help": "将正文视为原始 HTML 而非 Markdown"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "required": false,
+        "help": "仅保存草稿（B站专栏始终如此，此参数保留兼容性）"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "实际提交。不加此参数时命令拒绝写入。"
+      }
+    ],
+    "columns": [
+      "status",
+      "outcome",
+      "message",
+      "target_type",
+      "target",
+      "created_target",
+      "created_url"
+    ],
+    "type": "js",
+    "modulePath": "bilibili/article.js",
+    "sourceFile": "bilibili/article.js",
+    "navigateBefore": "https://member.bilibili.com"
   },
   {
     "site": "bilibili",
@@ -7498,6 +7641,87 @@
     "siteSession": "persistent"
   },
   {
+    "site": "cnblogs",
+    "name": "article",
+    "description": "发布博客园文章（Markdown）。正文默认 Markdown；图片自动转存到博客园图床。",
+    "access": "write",
+    "domain": "cnblogs.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "文章标题"
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "文章正文（Markdown，默认；--html 时按 HTML 处理）"
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "从文件读取正文（UTF-8，Markdown 默认）"
+      },
+      {
+        "name": "html",
+        "type": "boolean",
+        "required": false,
+        "help": "将正文当作原始 HTML 而非 Markdown"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "required": false,
+        "help": "仅保存草稿，不发布"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "实际执行写入。不加此参数命令拒绝写入。"
+      }
+    ],
+    "columns": [
+      "status",
+      "outcome",
+      "message",
+      "target_type",
+      "target",
+      "created_target",
+      "created_url"
+    ],
+    "type": "js",
+    "modulePath": "cnblogs/article.js",
+    "sourceFile": "cnblogs/article.js",
+    "navigateBefore": "https://cnblogs.com"
+  },
+  {
+    "site": "cnblogs",
+    "name": "whoami",
+    "description": "查看当前博客园登录账号信息。",
+    "access": "read",
+    "domain": "cnblogs.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "cnblogs/whoami.js",
+    "sourceFile": "cnblogs/whoami.js",
+    "navigateBefore": "https://cnblogs.com"
+  },
+  {
     "site": "cnki",
     "name": "search",
     "description": "中国知网论文搜索（海外版）",
@@ -8825,6 +9049,168 @@
     "type": "js",
     "modulePath": "crates/search.js",
     "sourceFile": "crates/search.js"
+  },
+  {
+    "site": "csdn",
+    "name": "article",
+    "description": "发布 CSDN 博客文章。正文默认为 Markdown，图片自动转存到 CSDN 图床。",
+    "access": "write",
+    "domain": "editor.csdn.net",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "文章标题"
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "正文（Markdown，与 --file 二选一）"
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "正文文件路径（UTF-8 编码 Markdown 文件）"
+      },
+      {
+        "name": "html",
+        "type": "boolean",
+        "required": false,
+        "help": "将正文视为 HTML 而非 Markdown"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "required": false,
+        "help": "仅保存为草稿，不发布"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "真正执行写操作，不加此参数则拒绝发布"
+      }
+    ],
+    "columns": [
+      "status",
+      "outcome",
+      "message",
+      "target_type",
+      "target",
+      "created_target",
+      "created_url"
+    ],
+    "type": "js",
+    "modulePath": "csdn/article.js",
+    "sourceFile": "csdn/article.js",
+    "navigateBefore": "https://editor.csdn.net"
+  },
+  {
+    "site": "csdn",
+    "name": "whoami",
+    "description": "查看当前登录的 CSDN 账号信息",
+    "access": "read",
+    "domain": "editor.csdn.net",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "csdn/whoami.js",
+    "sourceFile": "csdn/whoami.js",
+    "navigateBefore": "https://editor.csdn.net"
+  },
+  {
+    "site": "cto51",
+    "name": "article",
+    "description": "发布 51CTO 博客文章（草稿）。正文默认为 Markdown；图片自动转存到 51CTO 图床（腾讯云 COS）。",
+    "access": "write",
+    "domain": "blog.51cto.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "文章标题"
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "文章正文（默认 Markdown；传 --html 则视为 HTML）"
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "正文文件路径（UTF-8，默认 Markdown）"
+      },
+      {
+        "name": "html",
+        "type": "boolean",
+        "required": false,
+        "help": "将正文视为 HTML 而非 Markdown"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "required": false,
+        "help": "（保留参数，51CTO 只支持保存草稿）"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "真正执行创建/发布。没有此参数时命令拒绝写操作。"
+      }
+    ],
+    "columns": [
+      "status",
+      "outcome",
+      "message",
+      "target_type",
+      "target",
+      "created_target",
+      "created_url"
+    ],
+    "type": "js",
+    "modulePath": "cto51/article.js",
+    "sourceFile": "cto51/article.js",
+    "navigateBefore": "https://blog.51cto.com"
+  },
+  {
+    "site": "cto51",
+    "name": "whoami",
+    "description": "查看当前 51CTO 登录账号信息。",
+    "access": "read",
+    "domain": "blog.51cto.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "cto51/whoami.js",
+    "sourceFile": "cto51/whoami.js",
+    "navigateBefore": "https://blog.51cto.com"
   },
   {
     "site": "ctrip",
@@ -10872,6 +11258,68 @@
   },
   {
     "site": "douban",
+    "name": "article",
+    "description": "发布豆瓣日记。正文默认 Markdown，图片自动转存到豆瓣图床，note_text 以 Draft.js 格式提交。",
+    "access": "write",
+    "domain": "www.douban.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "日记标题"
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "正文（Markdown 格式；也可用 --file）"
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "正文文件路径（UTF-8，Markdown 格式）"
+      },
+      {
+        "name": "html",
+        "type": "boolean",
+        "required": false,
+        "help": "把正文当 HTML 处理而不是 Markdown"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "required": false,
+        "help": "仅保存草稿，不公开发布（豆瓣日记草稿等同于 autosave）"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "真正执行写操作；不带此参数命令会拒绝写入"
+      }
+    ],
+    "columns": [
+      "status",
+      "outcome",
+      "message",
+      "target_type",
+      "target",
+      "created_target",
+      "created_url"
+    ],
+    "type": "js",
+    "modulePath": "douban/article.js",
+    "sourceFile": "douban/article.js",
+    "navigateBefore": "https://www.douban.com"
+  },
+  {
+    "site": "douban",
     "name": "book-hot",
     "description": "豆瓣图书热门榜单",
     "access": "read",
@@ -12548,6 +12996,68 @@
   },
   {
     "site": "eastmoney",
+    "name": "article",
+    "description": "发布东方财富财富号文章（草稿）。正文默认 Markdown；图片自动转存到东方财富图床。",
+    "access": "write",
+    "domain": "mp.eastmoney.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "文章标题"
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "文章正文（默认 Markdown；--html 表示 HTML）"
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "正文文件路径（UTF-8，默认 Markdown）"
+      },
+      {
+        "name": "html",
+        "type": "boolean",
+        "required": false,
+        "help": "正文格式为 HTML 而非 Markdown"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "required": false,
+        "help": "仅保存草稿（东方财富 mp 端目前仅支持草稿，默认即草稿）"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "确认实际写入，不带此参数时拒绝写操作"
+      }
+    ],
+    "columns": [
+      "status",
+      "outcome",
+      "message",
+      "target_type",
+      "target",
+      "created_target",
+      "created_url"
+    ],
+    "type": "js",
+    "modulePath": "eastmoney/article.js",
+    "sourceFile": "eastmoney/article.js",
+    "navigateBefore": "https://mp.eastmoney.com"
+  },
+  {
+    "site": "eastmoney",
     "name": "convertible",
     "description": "可转债行情列表（默认按成交额排序）",
     "access": "read",
@@ -13078,6 +13588,25 @@
     "type": "js",
     "modulePath": "eastmoney/sectors.js",
     "sourceFile": "eastmoney/sectors.js"
+  },
+  {
+    "site": "eastmoney",
+    "name": "whoami",
+    "description": "查询当前东方财富财富号登录账号",
+    "access": "read",
+    "domain": "mp.eastmoney.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "eastmoney/whoami.js",
+    "sourceFile": "eastmoney/whoami.js",
+    "navigateBefore": "https://mp.eastmoney.com"
   },
   {
     "site": "endoflife",
@@ -16935,6 +17464,87 @@
     "sourceFile": "imdb/trending.js"
   },
   {
+    "site": "imooc",
+    "name": "article",
+    "description": "发布慕课手记文章（Markdown，始终存为草稿）。正文默认为 Markdown；外链图自动转存到慕课图床。",
+    "access": "write",
+    "domain": "www.imooc.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "文章标题"
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "文章正文（Markdown，默认）"
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "正文文件路径（UTF-8，Markdown）"
+      },
+      {
+        "name": "html",
+        "type": "boolean",
+        "required": false,
+        "help": "将正文视为原始 HTML 而非 Markdown"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "required": false,
+        "help": "（慕课始终草稿，此标志无额外效果）"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "真正执行写入，不加此标志时拒绝写操作"
+      }
+    ],
+    "columns": [
+      "status",
+      "outcome",
+      "message",
+      "target_type",
+      "target",
+      "created_target",
+      "created_url"
+    ],
+    "type": "js",
+    "modulePath": "imooc/article.js",
+    "sourceFile": "imooc/article.js",
+    "navigateBefore": "https://www.imooc.com"
+  },
+  {
+    "site": "imooc",
+    "name": "whoami",
+    "description": "查询当前在 Chrome 里登录的慕课网账号。",
+    "access": "read",
+    "domain": "www.imooc.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "imooc/whoami.js",
+    "sourceFile": "imooc/whoami.js",
+    "navigateBefore": "https://www.imooc.com"
+  },
+  {
     "site": "indeed",
     "name": "job",
     "aliases": [
@@ -18981,6 +19591,68 @@
   },
   {
     "site": "juejin",
+    "name": "article",
+    "description": "发布掘金文章（草稿）。正文默认为 Markdown；图片自动转存至掘金图床（字节 ImageX）。",
+    "access": "write",
+    "domain": "juejin.cn",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "文章标题"
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "文章正文（默认 Markdown；传 --html 则视为 HTML）"
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "正文文件路径（UTF-8 编码，默认 Markdown）"
+      },
+      {
+        "name": "html",
+        "type": "boolean",
+        "required": false,
+        "help": "将正文视为原始 HTML 而非 Markdown"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "required": false,
+        "help": "仅保存草稿，不发布（掘金 API 目前只支持草稿，此选项保留兼容性）"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "确认执行写操作。不加此参数则拒绝写入。"
+      }
+    ],
+    "columns": [
+      "status",
+      "outcome",
+      "message",
+      "target_type",
+      "target",
+      "created_target",
+      "created_url"
+    ],
+    "type": "js",
+    "modulePath": "juejin/article.js",
+    "sourceFile": "juejin/article.js",
+    "navigateBefore": "https://juejin.cn"
+  },
+  {
+    "site": "juejin",
     "name": "hot",
     "description": "Juejin (掘金) hot article ranking, optionally scoped to a category",
     "access": "read",
@@ -19059,6 +19731,25 @@
     "type": "js",
     "modulePath": "juejin/recommend.js",
     "sourceFile": "juejin/recommend.js"
+  },
+  {
+    "site": "juejin",
+    "name": "whoami",
+    "description": "检测掘金当前登录状态，返回用户 ID 和用户名。",
+    "access": "read",
+    "domain": "juejin.cn",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "juejin/whoami.js",
+    "sourceFile": "juejin/whoami.js",
+    "navigateBefore": "https://juejin.cn"
   },
   {
     "site": "ke",
@@ -25647,6 +26338,87 @@
     "sourceFile": "openreview/venue.js"
   },
   {
+    "site": "oschina",
+    "name": "article",
+    "description": "发布文章到开源中国（草稿，需在网站确认发布）。正文默认为 Markdown，外链图片自动转存到开源中国图床。",
+    "access": "write",
+    "domain": "my.oschina.net",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "文章标题"
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "文章正文（默认 Markdown；--html 表示原始 HTML）"
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "从文件读取正文（UTF-8，默认 Markdown）"
+      },
+      {
+        "name": "html",
+        "type": "boolean",
+        "required": false,
+        "help": "将正文视为原始 HTML 而非 Markdown"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "required": false,
+        "help": "存草稿（开源中国始终存草稿，此参数保留供接口一致性）"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "真正执行写操作；不加此参数命令拒绝写入"
+      }
+    ],
+    "columns": [
+      "status",
+      "outcome",
+      "message",
+      "target_type",
+      "target",
+      "created_target",
+      "created_url"
+    ],
+    "type": "js",
+    "modulePath": "oschina/article.js",
+    "sourceFile": "oschina/article.js",
+    "navigateBefore": "https://my.oschina.net"
+  },
+  {
+    "site": "oschina",
+    "name": "whoami",
+    "description": "查询当前开源中国登录账号信息（登录状态 / 用户 ID / 用户名）。",
+    "access": "read",
+    "domain": "my.oschina.net",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "oschina/whoami.js",
+    "sourceFile": "oschina/whoami.js",
+    "navigateBefore": "https://my.oschina.net"
+  },
+  {
     "site": "osv",
     "name": "query",
     "description": "OSV.dev vulnerabilities affecting a package (optionally pinned to a version)",
@@ -29661,6 +30433,87 @@
     "sourceFile": "rubygems/search.js"
   },
   {
+    "site": "segmentfault",
+    "name": "article",
+    "description": "发布文章到思否（SegmentFault）。正文默认 Markdown；图片自动转存到思否图床；创建草稿后需在网页上手动发布。",
+    "access": "write",
+    "domain": "segmentfault.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "文章标题"
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "文章正文（默认 Markdown；传 --html 则视为 HTML）"
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "正文文件路径（UTF-8，默认 Markdown）"
+      },
+      {
+        "name": "html",
+        "type": "boolean",
+        "required": false,
+        "help": "将正文视为原始 HTML 而非 Markdown"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "required": false,
+        "help": "仅保存草稿（思否默认行为，此参数保留兼容性）"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "实际执行发布。不加此参数时命令拒绝写操作。"
+      }
+    ],
+    "columns": [
+      "status",
+      "outcome",
+      "message",
+      "target_type",
+      "target",
+      "created_target",
+      "created_url"
+    ],
+    "type": "js",
+    "modulePath": "segmentfault/article.js",
+    "sourceFile": "segmentfault/article.js",
+    "navigateBefore": "https://segmentfault.com"
+  },
+  {
+    "site": "segmentfault",
+    "name": "whoami",
+    "description": "检查思否（SegmentFault）的登录状态并获取当前账号信息",
+    "access": "read",
+    "domain": "segmentfault.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "segmentfault/whoami.js",
+    "sourceFile": "segmentfault/whoami.js",
+    "navigateBefore": "https://segmentfault.com"
+  },
+  {
     "site": "semanticscholar",
     "name": "citations",
     "description": "List papers that cite a Semantic Scholar paper (paginated)",
@@ -31767,6 +32620,87 @@
     "modulePath": "smzdm/search.js",
     "sourceFile": "smzdm/search.js",
     "navigateBefore": "https://www.smzdm.com"
+  },
+  {
+    "site": "sohu",
+    "name": "article",
+    "description": "发布文章到搜狐号（HTML 格式，图片自动转存到搜狐图床，保存为草稿）。",
+    "access": "write",
+    "domain": "mp.sohu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "文章标题"
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "文章正文（默认 Markdown，传 --html 则视为 HTML）"
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "正文文件路径（UTF-8，Markdown 或 HTML）"
+      },
+      {
+        "name": "html",
+        "type": "boolean",
+        "required": false,
+        "help": "将正文视为原始 HTML 而非 Markdown"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "required": false,
+        "help": "仅保存草稿（搜狐号暂无一键发布 API，此选项默认行为）"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "实际执行写入操作；不加此参数则拒绝写入（干跑保护）"
+      }
+    ],
+    "columns": [
+      "status",
+      "outcome",
+      "message",
+      "target_type",
+      "target",
+      "created_target",
+      "created_url"
+    ],
+    "type": "js",
+    "modulePath": "sohu/article.js",
+    "sourceFile": "sohu/article.js",
+    "navigateBefore": "https://mp.sohu.com"
+  },
+  {
+    "site": "sohu",
+    "name": "whoami",
+    "description": "查看当前搜狐号登录账号信息（用户名、用户 ID）。",
+    "access": "read",
+    "domain": "mp.sohu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "sohu/whoami.js",
+    "sourceFile": "sohu/whoami.js",
+    "navigateBefore": "https://mp.sohu.com"
   },
   {
     "site": "spotify",
@@ -38541,6 +39475,68 @@
   },
   {
     "site": "weixin",
+    "name": "article",
+    "description": "通过 API 把文章发布到微信公众号草稿箱。正文默认 Markdown，外链图片自动转存到微信 CDN。",
+    "access": "write",
+    "domain": "mp.weixin.qq.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "文章标题（最长 64 字）"
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "文章正文（默认 Markdown；加 --html 则当 HTML 处理）"
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "正文文件路径（UTF-8，默认 Markdown）"
+      },
+      {
+        "name": "html",
+        "type": "boolean",
+        "required": false,
+        "help": "把正文当 HTML 处理而不是 Markdown"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "required": false,
+        "help": "仅保存草稿（微信公众号目前只支持草稿，此参数保留兼容性）"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "实际执行发布。不加此参数时命令拒绝写入。"
+      }
+    ],
+    "columns": [
+      "status",
+      "outcome",
+      "message",
+      "target_type",
+      "target",
+      "created_target",
+      "created_url"
+    ],
+    "type": "js",
+    "modulePath": "weixin/article.js",
+    "sourceFile": "weixin/article.js",
+    "navigateBefore": "https://mp.weixin.qq.com"
+  },
+  {
+    "site": "weixin",
     "name": "create-draft",
     "description": "创建微信公众号图文草稿",
     "access": "write",
@@ -38715,6 +39711,25 @@
     "type": "js",
     "modulePath": "weixin/search.js",
     "sourceFile": "weixin/search.js"
+  },
+  {
+    "site": "weixin",
+    "name": "whoami",
+    "description": "查询当前登录的微信公众号账户信息。",
+    "access": "read",
+    "domain": "mp.weixin.qq.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "weixin/whoami.js",
+    "sourceFile": "weixin/whoami.js",
+    "navigateBefore": "https://mp.weixin.qq.com"
   },
   {
     "site": "weread",
@@ -39718,6 +40733,87 @@
     "type": "js",
     "modulePath": "wikipedia/trending.js",
     "sourceFile": "wikipedia/trending.js"
+  },
+  {
+    "site": "woshipm",
+    "name": "article",
+    "description": "发布文章到人人都是产品经理（woshipm.com）。正文默认 Markdown，图片自动转存到站内图床。",
+    "access": "write",
+    "domain": "www.woshipm.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "文章标题"
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "文章正文（默认 Markdown；传 --html 则视为 HTML）"
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "正文文件路径（UTF-8，默认 Markdown）"
+      },
+      {
+        "name": "html",
+        "type": "boolean",
+        "required": false,
+        "help": "把正文当 HTML 而非 Markdown 处理"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "required": false,
+        "help": "仅保存草稿，不发布（woshipm 目前仅支持草稿模式）"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "确认执行写操作。未传则拒绝写入。"
+      }
+    ],
+    "columns": [
+      "status",
+      "outcome",
+      "message",
+      "target_type",
+      "target",
+      "created_target",
+      "created_url"
+    ],
+    "type": "js",
+    "modulePath": "woshipm/article.js",
+    "sourceFile": "woshipm/article.js",
+    "navigateBefore": "https://www.woshipm.com"
+  },
+  {
+    "site": "woshipm",
+    "name": "whoami",
+    "description": "显示当前登录人人都是产品经理（woshipm.com）的账号信息。",
+    "access": "read",
+    "domain": "www.woshipm.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "woshipm/whoami.js",
+    "sourceFile": "woshipm/whoami.js",
+    "navigateBefore": "https://www.woshipm.com"
   },
   {
     "site": "wttr",
@@ -41438,6 +42534,68 @@
     "type": "js",
     "modulePath": "xiaoyuzhou/transcript.js",
     "sourceFile": "xiaoyuzhou/transcript.js"
+  },
+  {
+    "site": "xueqiu",
+    "name": "article",
+    "description": "发布雪球文章（长文/草稿）。正文默认为 Markdown，图片自动转存到雪球图床。注意：雪球 API 只提供草稿保存，发布需在写作页手动操作。",
+    "access": "write",
+    "domain": "mp.xueqiu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "文章标题"
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "正文（默认 Markdown；传 --html 则视为原始 HTML）"
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "正文文件路径（UTF-8，默认 Markdown）"
+      },
+      {
+        "name": "html",
+        "type": "boolean",
+        "required": false,
+        "help": "把正文视为原始 HTML 而非 Markdown"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "required": false,
+        "help": "仅保存草稿（雪球本身就只能保存草稿，此参数效果相同）"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "实际执行写入；不加此参数命令拒绝写操作"
+      }
+    ],
+    "columns": [
+      "status",
+      "outcome",
+      "message",
+      "target_type",
+      "target",
+      "created_target",
+      "created_url"
+    ],
+    "type": "js",
+    "modulePath": "xueqiu/article.js",
+    "sourceFile": "xueqiu/article.js",
+    "navigateBefore": "https://mp.xueqiu.com"
   },
   {
     "site": "xueqiu",
@@ -43348,6 +44506,87 @@
     "siteSession": "persistent"
   },
   {
+    "site": "yuque",
+    "name": "article",
+    "description": "发布语雀文章（知识库文档）。正文默认为 Markdown，外链图片自动转存到语雀图床。",
+    "access": "write",
+    "domain": "www.yuque.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "文章标题"
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "文章正文（Markdown 格式；或用 --file 读文件）"
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "正文文件路径（UTF-8，Markdown 格式）"
+      },
+      {
+        "name": "html",
+        "type": "boolean",
+        "required": false,
+        "help": "把正文当 HTML 输入（语雀仍转 lake 发布）"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "required": false,
+        "help": "仅保存草稿，不发布"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "实际执行写操作。不加此参数命令拒绝写入。"
+      }
+    ],
+    "columns": [
+      "status",
+      "outcome",
+      "message",
+      "target_type",
+      "target",
+      "created_target",
+      "created_url"
+    ],
+    "type": "js",
+    "modulePath": "yuque/article.js",
+    "sourceFile": "yuque/article.js",
+    "navigateBefore": "https://www.yuque.com"
+  },
+  {
+    "site": "yuque",
+    "name": "whoami",
+    "description": "查看当前语雀登录账号信息。",
+    "access": "read",
+    "domain": "www.yuque.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "yuque/whoami.js",
+    "sourceFile": "yuque/whoami.js",
+    "navigateBefore": "https://www.yuque.com"
+  },
+  {
     "site": "zhihu",
     "name": "answer",
     "description": "Answer a Zhihu question",
@@ -43492,7 +44731,7 @@
   {
     "site": "zhihu",
     "name": "article",
-    "description": "Publish a Zhihu article (文章/专栏)",
+    "description": "Publish a Zhihu article (文章/专栏). Body is Markdown by default; images are auto-rehosted to Zhihu.",
     "access": "write",
     "domain": "zhuanlan.zhihu.com",
     "strategy": "cookie",
@@ -43510,19 +44749,19 @@
         "type": "str",
         "required": false,
         "positional": true,
-        "help": "Article body (plain text by default; pass --html for raw HTML)"
+        "help": "Article body (Markdown by default; pass --html for raw HTML)"
       },
       {
         "name": "file",
         "type": "str",
         "required": false,
-        "help": "Article body file path (UTF-8)"
+        "help": "Article body file path (UTF-8, Markdown by default)"
       },
       {
         "name": "html",
         "type": "boolean",
         "required": false,
-        "help": "Treat body as raw HTML (default: plain text — escaped, newlines become paragraphs)"
+        "help": "Treat body as raw HTML instead of Markdown"
       },
       {
         "name": "draft",

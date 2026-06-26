@@ -11,20 +11,28 @@ async function verifyDoubanIdentity(page) {
   if (!await hasDoubanSessionCookie(page)) {
     throw new AuthRequiredError('douban.com', 'Douban dbcl2 / ck cookies missing');
   }
-  await page.goto('https://www.douban.com/');
+  // 豆瓣改版后导航里已无 /people/<数字id>/ 链接（“个人主页”指向 /mine/，.bn-more 指向账号设置页），
+  // 且 dbcl2 是 HttpOnly、document.cookie 读不到。改走 /mine/：它会 302 跳到 /people/<id>/，
+  // 从最终 URL 解析数字 user_id（DOM-free，最稳）。用户名再从个人主页/导航读。
+  await page.goto('https://www.douban.com/mine/');
   await page.wait(2);
   const probe = await page.evaluate(`
     (() => {
-      const navUser = document.querySelector('.nav-user-account .bn-more, .top-nav-info a.bn-more');
-      if (!navUser) {
-        return { kind: 'auth', detail: 'Douban nav-user element missing — not signed in' };
-      }
-      const href = navUser.getAttribute('href') || '';
+      const href = location.href;
       const m = href.match(/people\\/(\\d+)\\/?/);
       const user_id = m ? m[1] : '';
-      const name = (navUser.textContent || '').trim();
       if (!user_id) {
-        return { kind: 'auth', detail: 'Douban user_id parse failed: href=' + href };
+        return { kind: 'auth', detail: 'Douban user_id parse failed (mine redirect): href=' + href };
+      }
+      let name = '';
+      const h1 = document.querySelector('.info h1');
+      if (h1) {
+        const node = h1.childNodes[0];
+        name = ((node && node.textContent) || h1.textContent || '').trim();
+      }
+      if (!name) {
+        const bn = document.querySelector('.bn-more');
+        if (bn) name = (bn.textContent || '').replace(/的账号$|的帐号$/, '').trim();
       }
       return { ok: true, user_id, name };
     })()
