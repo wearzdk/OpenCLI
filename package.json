@@ -1,6 +1,6 @@
 {
   "name": "publishport-opencli",
-  "version": "1.8.4-pp.3",
+  "version": "1.8.4-pp.4",
   "publishConfig": {
     "access": "public"
   },
