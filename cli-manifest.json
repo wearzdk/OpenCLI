@@ -17135,6 +17135,47 @@
   },
   {
     "site": "instagram",
+    "name": "detail",
+    "description": "Get single-post Instagram details, including direct media URLs",
+    "access": "read",
+    "domain": "www.instagram.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "url",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Instagram post / reel / tv URL"
+      }
+    ],
+    "columns": [
+      "shortcode",
+      "media_id",
+      "kind",
+      "type",
+      "posted_at",
+      "owner",
+      "owner_name",
+      "owner_verified",
+      "likes",
+      "comments",
+      "views",
+      "media_count",
+      "media_types",
+      "media_urls",
+      "thumbnail_url",
+      "url",
+      "caption"
+    ],
+    "type": "js",
+    "modulePath": "instagram/detail.js",
+    "sourceFile": "instagram/detail.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "instagram",
     "name": "download",
     "description": "Download images and videos from Instagram posts and reels",
     "access": "read",
@@ -17158,8 +17199,8 @@
       }
     ],
     "type": "js",
-    "modulePath": "instagram/download.js",
-    "sourceFile": "instagram/download.js",
+    "modulePath": "instagram/detail.js",
+    "sourceFile": "instagram/detail.js",
     "navigateBefore": false
   },
   {
@@ -17759,7 +17800,60 @@
         "type": "int",
         "default": 12,
         "required": false,
-        "help": "Number of posts"
+        "help": "Number of posts (1-1000)"
+      },
+      {
+        "name": "date",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Fetch posts from one full local day. Format: YYYY-MM-DD. Cannot be combined with --from/--to."
+      },
+      {
+        "name": "from",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Fetch posts from this timestamp onward. Use ISO 8601 like 2026-07-11T18:30:00+05:30 or Unix seconds."
+      },
+      {
+        "name": "to",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Fetch posts up to this timestamp. Requires --from. Use ISO 8601 like 2026-07-12T18:30:00+05:30 or Unix seconds."
+      },
+      {
+        "name": "caption-filter-mode",
+        "type": "str",
+        "default": "contains",
+        "required": false,
+        "help": "Caption matching mode: contains or regex",
+        "choices": [
+          "contains",
+          "regex"
+        ]
+      },
+      {
+        "name": "caption-filter",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Keep only posts whose caption matches this pattern"
+      },
+      {
+        "name": "caption-reject",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Drop posts whose caption matches this pattern (same mode as caption-filter-mode)"
+      },
+      {
+        "name": "caption-case-sensitive",
+        "type": "bool",
+        "default": false,
+        "required": false,
+        "help": "Match captions case-sensitively"
       }
     ],
     "columns": [
@@ -17768,7 +17862,12 @@
       "likes",
       "comments",
       "type",
-      "date"
+      "date",
+      "posted_at",
+      "kind",
+      "shortcode",
+      "media_id",
+      "url"
     ],
     "type": "js",
     "modulePath": "instagram/user.js",
@@ -20948,6 +21047,78 @@
         "default": 5,
         "required": false,
         "help": "Maximum people to return (1-10); each query counts toward LinkedIn's monthly CUL"
+      },
+      {
+        "name": "first-name",
+        "type": "string",
+        "required": false,
+        "help": "Filter to people whose first name matches this text (LinkedIn KEYWORDS / FIRST NAME filter)."
+      },
+      {
+        "name": "last-name",
+        "type": "string",
+        "required": false,
+        "help": "Filter to people whose last name matches this text (LinkedIn KEYWORDS / LAST NAME filter)."
+      },
+      {
+        "name": "title",
+        "type": "string",
+        "required": false,
+        "help": "Filter to people whose current title contains this text (LinkedIn KEYWORDS / TITLE filter)."
+      },
+      {
+        "name": "school-keyword",
+        "type": "string",
+        "required": false,
+        "help": "Free-text school filter (LinkedIn SCHOOL filter, name match)."
+      },
+      {
+        "name": "network",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated connection degrees: 1, 2, 3 (where 3 means 3rd+). E.g. \"1,2\" for 1st and 2nd-degree only."
+      },
+      {
+        "name": "profile-language",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated ISO 639-1 codes for profile language, e.g. \"en,fr\"."
+      },
+      {
+        "name": "open-to",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated open-to values: proBono, boardMember."
+      },
+      {
+        "name": "current-company-id",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated LinkedIn company IDs for CURRENT COMPANY filter (e.g. \"1441\" for Google). To find an ID: visit the company's LinkedIn URL — `/company/<slug>/` — then open Network tools, or click the filter chip on a search results page and read the URL's `currentCompany` param. A full URN like `urn:li:fs_company:1441` is also accepted."
+      },
+      {
+        "name": "past-company-id",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated LinkedIn company IDs for PAST COMPANY filter. Same lookup pattern as --current-company-id."
+      },
+      {
+        "name": "industry-id",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated LinkedIn industry IDs (e.g. \"4\" for Computer Software). Apply the filter once via the LinkedIn UI and read the URL's `industry` param to discover IDs."
+      },
+      {
+        "name": "location-id",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated LinkedIn location IDs (geoUrn numeric tail; e.g. \"105214831\" for Bengaluru area). Apply the location filter once via UI and read the URL's `geoUrn` param."
+      },
+      {
+        "name": "school-id",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated LinkedIn school IDs (numeric tail of urn:li:fs_school:<id>). For free-text school name matching, use --school-keyword instead."
       }
     ],
     "columns": [
@@ -33307,7 +33478,8 @@
     "type": "js",
     "modulePath": "tiktok/following.js",
     "sourceFile": "tiktok/following.js",
-    "navigateBefore": "https://www.tiktok.com"
+    "navigateBefore": "https://www.tiktok.com",
+    "siteSession": "persistent"
   },
   {
     "site": "tiktok",
@@ -36462,6 +36634,93 @@
     "type": "js",
     "modulePath": "twitter/retweet.js",
     "sourceFile": "twitter/retweet.js",
+    "navigateBefore": true
+  },
+  {
+    "site": "twitter",
+    "name": "schedule",
+    "description": "Schedule a new X post through the web composer",
+    "access": "write",
+    "domain": "x.com",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "text",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "The text content of the scheduled post"
+      },
+      {
+        "name": "at",
+        "type": "string",
+        "required": false,
+        "help": "Local scheduled time, e.g. \"2026-05-24 21:30\""
+      },
+      {
+        "name": "delay-minutes",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Schedule this many minutes from now"
+      }
+    ],
+    "columns": [
+      "status",
+      "message",
+      "text",
+      "scheduledFor"
+    ],
+    "type": "js",
+    "modulePath": "twitter/schedule.js",
+    "sourceFile": "twitter/schedule.js",
+    "navigateBefore": true
+  },
+  {
+    "site": "twitter",
+    "name": "scheduled-delete",
+    "description": "Delete a scheduled X post by matching a text fragment",
+    "access": "write",
+    "domain": "x.com",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "match",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Text fragment that uniquely identifies the scheduled post"
+      }
+    ],
+    "columns": [
+      "status",
+      "message",
+      "match"
+    ],
+    "type": "js",
+    "modulePath": "twitter/scheduled-delete.js",
+    "sourceFile": "twitter/scheduled-delete.js",
+    "navigateBefore": true
+  },
+  {
+    "site": "twitter",
+    "name": "scheduled-list",
+    "description": "List X posts currently scheduled in the web composer",
+    "access": "read",
+    "domain": "x.com",
+    "strategy": "ui",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "index",
+      "scheduledFor",
+      "text"
+    ],
+    "type": "js",
+    "modulePath": "twitter/scheduled-list.js",
+    "sourceFile": "twitter/scheduled-list.js",
     "navigateBefore": true
   },
   {

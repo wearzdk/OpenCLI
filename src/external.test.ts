@@ -1,16 +1,19 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 
-const { mockExecFileSync, mockPlatform } = vi.hoisted(() => ({
+const { mockExecFileSync, mockSpawnSync, mockPlatform, mockEnforceRateLimit } = vi.hoisted(() => ({
   mockExecFileSync: vi.fn(),
+  mockSpawnSync: vi.fn(),
   mockPlatform: vi.fn(() => 'darwin'),
+  mockEnforceRateLimit: vi.fn(),
 }));
 
 vi.mock('node:child_process', () => ({
-  spawnSync: vi.fn(),
+  spawnSync: mockSpawnSync,
   execFileSync: mockExecFileSync,
 }));
 
@@ -22,7 +25,18 @@ vi.mock('node:os', async () => {
   };
 });
 
-import { formatExternalCliLabel, installExternalCli, parseCommand, type ExternalCliConfig } from './external.js';
+vi.mock('./rate-limit.js', () => ({
+  enforceRateLimit: mockEnforceRateLimit,
+}));
+
+import {
+  executeExternalCli,
+  formatExternalCliLabel,
+  installExternalCli,
+  parseCommand,
+  type ExternalCliConfig,
+} from './external.js';
+import { RateLimitError } from './errors.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -144,5 +158,99 @@ describe('installExternalCli', () => {
 
     expect(installExternalCli(cli)).toBe(false);
     expect(mockExecFileSync).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('executeExternalCli', () => {
+  const registry: ExternalCliConfig[] = [{ name: 'gh', binary: 'gh' }];
+  let previousExitCode: typeof process.exitCode;
+
+  beforeEach(() => {
+    mockSpawnSync.mockReset();
+    mockExecFileSync.mockReset();
+    mockPlatform.mockReturnValue('darwin');
+    previousExitCode = process.exitCode;
+    process.exitCode = 0;
+  });
+
+  afterEach(() => {
+    process.exitCode = previousExitCode;
+  });
+
+  it('mirrors the child exit status', () => {
+    mockExecFileSync.mockReturnValue(Buffer.from('')); // isBinaryInstalled -> true
+    mockSpawnSync.mockReturnValue({ status: 3, signal: null } as ReturnType<typeof spawnSync>);
+
+    executeExternalCli('gh', ['repo', 'list'], registry);
+
+    expect(process.exitCode).toBe(3);
+  });
+
+  it('reports a non-zero exit code when the child is signal-killed without the parent receiving it', () => {
+    mockExecFileSync.mockReturnValue(Buffer.from('')); // isBinaryInstalled -> true
+    // SIGKILL is delivered to the child PID (OOM-killer, `kill -9 <pid>`, etc.)
+    // without reaching the parent, so this branch is genuinely exercised.
+    mockSpawnSync.mockReturnValue({ status: null, signal: 'SIGKILL' } as ReturnType<typeof spawnSync>);
+
+    executeExternalCli('gh', ['repo', 'list'], registry);
+
+    expect(process.exitCode).toBe(137); // 128 + SIGKILL(9)
+  });
+
+  it('maps SIGINT to the curated INTERRUPTED exit code', () => {
+    mockExecFileSync.mockReturnValue(Buffer.from('')); // isBinaryInstalled -> true
+    mockSpawnSync.mockReturnValue({ status: null, signal: 'SIGINT' } as ReturnType<typeof spawnSync>);
+
+    executeExternalCli('gh', ['repo', 'list'], registry);
+
+    expect(process.exitCode).toBe(130); // EXIT_CODES.INTERRUPTED
+  });
+
+  it('falls back to GENERIC_ERROR for signals missing from os.constants', () => {
+    mockExecFileSync.mockReturnValue(Buffer.from('')); // isBinaryInstalled -> true
+    mockSpawnSync.mockReturnValue({
+      status: null,
+      signal: 'SIGNOPE' as NodeJS.Signals,
+    } as ReturnType<typeof spawnSync>);
+
+    executeExternalCli('gh', ['repo', 'list'], registry);
+
+    expect(process.exitCode).toBe(1); // EXIT_CODES.GENERIC_ERROR
+  });
+});
+
+describe('executeExternalCli rate limits', () => {
+  beforeEach(() => {
+    mockExecFileSync.mockReset();
+    mockSpawnSync.mockReset();
+    mockEnforceRateLimit.mockReset();
+    process.exitCode = undefined;
+  });
+
+  it('checks the external command name before binary lookup and spawn', () => {
+    mockEnforceRateLimit.mockImplementationOnce(() => {
+      throw new RateLimitError('gh', 60_000, '/tmp/rate-limits.yaml');
+    });
+
+    expect(() => executeExternalCli('gh', ['issue', 'list'], [
+      { name: 'gh', binary: 'gh' },
+    ])).toThrow(RateLimitError);
+
+    expect(mockEnforceRateLimit).toHaveBeenCalledWith('gh');
+    expect(mockExecFileSync).not.toHaveBeenCalled();
+    expect(mockSpawnSync).not.toHaveBeenCalled();
+  });
+
+  it('spawns the binary when the command is under its limit', () => {
+    mockExecFileSync.mockReturnValue(Buffer.from('/usr/bin/gh'));
+    mockSpawnSync.mockReturnValue({ status: 0, error: undefined });
+
+    executeExternalCli('gh', ['issue', 'list'], [
+      { name: 'gh', binary: 'gh' },
+    ]);
+
+    expect(mockEnforceRateLimit).toHaveBeenCalledWith('gh');
+    expect(mockSpawnSync).toHaveBeenCalledWith('gh', ['issue', 'list'], { stdio: 'inherit' });
+    expect(process.exitCode).toBe(0);
   });
 });

@@ -53,6 +53,10 @@ async function openReplyComposer(page, rawUrl) {
 }
 
 async function insertReplyText(page, text) {
+    // beforeunload neutralization is handled globally by stealth.ts (#14),
+    // injected on every nav (covers x.com re-registering after media staging).
+    // PR #1972's extra per-command strip here was redundant and inserted an
+    // extra page.evaluate that desynced the reply flow, so it is dropped.
     return page.evaluate(`(async () => {
       try {
           const visible = (el) => !!el && (el.offsetParent !== null || el.getClientRects().length > 0);

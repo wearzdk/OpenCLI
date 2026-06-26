@@ -494,23 +494,31 @@ async function removeLeaseSession(leaseKey: string): Promise<void> {
   await persistRuntimeState();
 }
 
-function resetWindowIdleTimer(leaseKey: string): void {
+// `remainingMs` lets the caller honor an already-elapsed deadline (e.g. after a
+// service-worker restart) instead of granting a fresh full timeout. When given,
+// the timer/alarm fire after the clamped remaining lifetime; when omitted, a
+// full idle timeout is started.
+function resetWindowIdleTimer(leaseKey: string, remainingMs?: number): void {
   const session = automationSessions.get(leaseKey);
   if (!session) return;
   if (session.idleTimer) clearTimeout(session.idleTimer);
   const timeout = getIdleTimeout(leaseKey);
-  scheduleIdleAlarm(leaseKey, timeout);
   if (timeout <= 0) {
+    scheduleIdleAlarm(leaseKey, timeout);
     session.idleTimer = null;
     session.idleDeadlineAt = 0;
     void persistRuntimeState();
     return;
   }
-  session.idleDeadlineAt = Date.now() + timeout;
+  const interval = remainingMs === undefined
+    ? timeout
+    : Math.max(0, Math.min(remainingMs, timeout));
+  scheduleIdleAlarm(leaseKey, interval);
+  session.idleDeadlineAt = Date.now() + interval;
   void persistRuntimeState();
   session.idleTimer = setTimeout(async () => {
     await releaseLease(leaseKey, 'idle timeout');
-  }, timeout);
+  }, interval);
 }
 
 function getOwnedContainerGroupTitles(role: OwnedWindowRole): string[] {
@@ -845,6 +853,11 @@ async function ensureOwnedContainerWindowUnlocked(
     await focusOwnedWindowIfRequested(existingGroup.windowId, mode);
     const initialTabId = await findReusableOwnedContainerTab(existingGroup.windowId, existingGroup.id);
     await persistRuntimeState();
+    // Trace: window reuse (pairs with the "Created owned … window" log below so the
+    // browser-op trace analyzer can compute the new-window-vs-reuse ratio — the core
+    // "开窗 vs 复用" waste signal). console.log is forwarded to the daemon trace file
+    // only when OPENCLI_BROWSER_TRACE_FILE is set; otherwise just normal logging.
+    console.log(`[opencli] Reused owned ${role} window ${existingGroup.windowId} (initialTab=${initialTabId ?? 'none'})`);
     return {
       windowId: existingGroup.windowId,
       initialTabId,
@@ -1292,6 +1305,49 @@ type ResolvedTab = { tabId: number; tab: chrome.tabs.Tab | null };
  * the Tab object (when available) so callers can skip a redundant chrome.tabs.get().
  */
 async function resolveTab(tabId: number | undefined, leaseKey: string, initialUrl?: string): Promise<ResolvedTab> {
+  const resolved = await resolveTabInternal(tabId, leaseKey, initialUrl);
+
+  if (getWindowMode(leaseKey) === 'foreground' && resolved.tabId !== undefined) {
+    try {
+      if (typeof chrome.tabs?.update === 'function') {
+        await chrome.tabs.update(resolved.tabId, { active: true });
+      }
+      const tab = resolved.tab || (typeof chrome.tabs?.get === 'function' ? await chrome.tabs.get(resolved.tabId) : null);
+      if (tab && typeof tab.windowId === 'number' && typeof chrome.windows?.update === 'function') {
+        let stateUpdate: chrome.windows.UpdateInfo = {};
+        if (typeof chrome.windows?.get === 'function') {
+          try {
+            const win = await chrome.windows.get(tab.windowId);
+            if (win.state === 'minimized') {
+              stateUpdate.state = 'normal';
+            }
+          } catch { /* ignore */ }
+        }
+        await chrome.windows.update(tab.windowId, { focused: true, ...stateUpdate });
+      }
+
+      if (typeof chrome.debugger?.sendCommand === 'function') {
+        try {
+          await executor.ensureAttached(resolved.tabId);
+          await chrome.debugger.sendCommand({ tabId: resolved.tabId }, 'Emulation.setPageVisibilityState', {
+            visibilityState: 'visible',
+          });
+          await chrome.debugger.sendCommand({ tabId: resolved.tabId }, 'Emulation.setFocusEmulationEnabled', {
+            enabled: true,
+          });
+        } catch (cdpErr) {
+          console.warn(`[opencli] Failed to set CDP visibility/focus emulation: ${cdpErr}`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[opencli] Failed to focus tab/window: ${err}`);
+    }
+  }
+
+  return resolved;
+}
+
+async function resolveTabInternal(tabId: number | undefined, leaseKey: string, initialUrl?: string): Promise<ResolvedTab> {
   const existingSession = automationSessions.get(leaseKey);
   // Even when an explicit tabId is provided, validate it is still debuggable.
   if (tabId !== undefined) {
@@ -1953,7 +2009,9 @@ async function reconcileTargetLeaseRegistry(): Promise<void> {
         if (remaining <= 0) {
           await releaseLease(leaseKey, 'reconciled idle expiry');
         } else {
-          resetWindowIdleTimer(leaseKey);
+          // Honor the persisted remaining lifetime — not a fresh full timeout —
+          // so a lease cannot dodge idle expiry by riding repeated SW restarts.
+          resetWindowIdleTimer(leaseKey, remaining);
         }
       }
     } catch {

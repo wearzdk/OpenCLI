@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { COMMAND_RESULT_UNKNOWN_CODE, COMMAND_RESULT_UNKNOWN_HINT } from '../daemon-utils.js';
 import {
   BrowserCommandError,
   fetchDaemonStatus,
@@ -222,6 +223,31 @@ describe('daemon-client', () => {
     expect(ids[0]).not.toBe(ids[1]);
   });
 
+  it('sendCommand surfaces a profile_required 409 immediately instead of retrying', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: () => Promise.resolve({
+        id: 'server',
+        ok: false,
+        errorCode: 'profile_required',
+        error: 'Multiple Browser Bridge profiles are connected; choose one with --profile.',
+        errorHint: 'Run opencli profile list, then use opencli --profile <name> ...',
+      }),
+    } as Response);
+
+    // The profile_required 409 is not a duplicate-id collision: it must throw
+    // the actionable error on the first attempt, not loop until "max retries
+    // exhausted".
+    await expect(sendCommand('exec', { code: '1 + 1' })).rejects.toMatchObject({
+      name: 'BrowserCommandError',
+      code: 'profile_required',
+      hint: 'Run opencli profile list, then use opencli --profile <name> ...',
+    } satisfies Partial<BrowserCommandError>);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('sendCommand does not retry command_result_unknown even when the message looks transient', async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockResolvedValue({
@@ -242,5 +268,41 @@ describe('daemon-client', () => {
       hint: 'Inspect state before retrying.',
     } satisfies Partial<BrowserCommandError>);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('sendCommand does not silently retry a mutating command on fetch AbortError', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockRejectedValue(
+      Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }),
+    );
+
+    await expect(sendCommand('exec', { code: 'window.__mutate = true' })).rejects.toMatchObject({
+      name: 'BrowserCommandError',
+      code: COMMAND_RESULT_UNKNOWN_CODE,
+      hint: COMMAND_RESULT_UNKNOWN_HINT,
+    } satisfies Partial<BrowserCommandError>);
+    // No second dispatch — the command must not be re-POSTed with a fresh id.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('sendCommand still retries on TypeError (connection refused) since the command never reached the daemon', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_763_000_000_456);
+    const fetchMock = vi.mocked(fetch);
+    fetchMock
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ id: 'server', ok: true, data: 'ok' }),
+      } as Response);
+
+    await expect(sendCommand('exec', { code: '1 + 1' })).resolves.toBe('ok');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const ids = fetchMock.mock.calls.map(([, init]) => {
+      const body = JSON.parse(String(init?.body)) as { id: string };
+      return body.id;
+    });
+    expect(ids[0]).not.toBe(ids[1]);
   });
 });

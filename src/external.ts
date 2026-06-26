@@ -6,6 +6,7 @@ import { spawnSync, execFileSync } from 'node:child_process';
 import yaml from 'js-yaml';
 import { log } from './logger.js';
 import { EXIT_CODES, getErrorMessage } from './errors.js';
+import { enforceRateLimit } from './rate-limit.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -186,6 +187,8 @@ export function executeExternalCli(name: string, args: string[], preloaded?: Ext
     throw new Error(`External CLI '${name}' not found in registry.`);
   }
 
+  enforceRateLimit(name);
+
   // 1. Check if installed
   if (!isBinaryInstalled(cli.binary)) {
     // 2. Try to auto install
@@ -206,6 +209,19 @@ export function executeExternalCli(name: string, args: string[], preloaded?: Ext
   
   if (result.status !== null) {
     process.exitCode = result.status;
+  } else if (result.signal) {
+    // Terminated by a signal (e.g. OOM-killer SIGKILL, or an operator/script
+    // killing the child PID): spawnSync leaves status null, so mirror the POSIX
+    // convention of 128 + signal number instead of falsely reporting success.
+    // Reuse the curated SIGINT constant; fall back to GENERIC_ERROR for signals
+    // missing from the os.constants table.
+    const sig = result.signal;
+    process.exitCode =
+      sig === 'SIGINT'
+        ? EXIT_CODES.INTERRUPTED
+        : os.constants.signals[sig]
+          ? 128 + os.constants.signals[sig]
+          : EXIT_CODES.GENERIC_ERROR;
   }
 }
 

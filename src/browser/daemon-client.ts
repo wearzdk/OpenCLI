@@ -6,6 +6,7 @@
 
 import { DEFAULT_DAEMON_PORT } from '../constants.js';
 import { sleep } from '../utils.js';
+import { COMMAND_RESULT_UNKNOWN_CODE, COMMAND_RESULT_UNKNOWN_HINT, commandResultUnknownMessage } from '../daemon-utils.js';
 import { classifyBrowserError } from './errors.js';
 import { resolveProfileContextId } from './profile.js';
 
@@ -169,8 +170,12 @@ export async function requestDaemonShutdown(opts?: { timeout?: number }): Promis
  * (sendCommand, sendCommandFull) only shape the return value.
  *
  * Retries up to 4 times:
- * - Network errors (TypeError, AbortError): retry at 500ms
+ * - Connection failures (TypeError, request never reached the daemon): retry at 500ms
  * - Transient browser errors: retry at the delay suggested by classifyBrowserError()
+ *
+ * A fetch AbortError (the 30s request timeout fired after dispatch) is NOT
+ * retried, because the daemon may still be executing the command; re-sending
+ * with a fresh id would double-dispatch it. It surfaces as command_result_unknown.
  */
 async function sendCommandRaw(
   action: DaemonCommand['action'],
@@ -201,8 +206,13 @@ async function sendCommandRaw(
         if (result.errorCode === 'command_result_unknown') {
           throw new BrowserCommandError(result.error ?? 'Browser command result is unknown', result.errorCode, result.errorHint);
         }
-        const isDuplicateCommandId = res.status === 409
-          || (result.error ?? '').includes('Duplicate command id');
+        // Only retry the genuine duplicate-id 409, which always carries this
+        // message. A bare `res.status === 409` also matches the daemon's
+        // `profile_required` 409 (multiple Browser Bridge profiles connected),
+        // which is NOT retryable — retrying it silently burns every attempt and
+        // then throws the opaque "max retries exhausted", discarding the
+        // actionable errorCode/hint that tells the user to pass --profile.
+        const isDuplicateCommandId = (result.error ?? '').includes('Duplicate command id');
         if (isDuplicateCommandId && attempt < maxRetries) {
           continue;
         }
@@ -216,9 +226,23 @@ async function sendCommandRaw(
 
       return result;
     } catch (err) {
-      const isNetworkError = err instanceof TypeError
-        || (err instanceof Error && err.name === 'AbortError');
-      if (isNetworkError && attempt < maxRetries) {
+      // A fetch AbortError means our 30s request timeout fired *after* the
+      // request was dispatched — the daemon may still be holding/executing the
+      // command for up to its pending window. Retrying re-POSTs with a fresh id
+      // (generateId() above), which the daemon does not see as a duplicate
+      // (it dedups only by body.id), so the same mutating command would be
+      // dispatched twice. Surface it as an unknown result instead of retrying,
+      // mirroring the command_result_unknown semantics handled above.
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new BrowserCommandError(
+          commandResultUnknownMessage(action),
+          COMMAND_RESULT_UNKNOWN_CODE,
+          COMMAND_RESULT_UNKNOWN_HINT,
+        );
+      }
+      // A TypeError means the request never reached the daemon (e.g. connection
+      // refused), so it is safe to re-send.
+      if (err instanceof TypeError && attempt < maxRetries) {
         await sleep(500);
         continue;
       }
