@@ -11259,7 +11259,7 @@
   {
     "site": "douban",
     "name": "article",
-    "description": "发布豆瓣日记。正文默认 Markdown，图片自动转存到豆瓣图床，note_text 以 Draft.js 格式提交。",
+    "description": "发布豆瓣日记。正文默认 Markdown，图片自动转存到豆瓣图床；正文以 Draft.js 提交到新版 rexxar 接口。",
     "access": "write",
     "domain": "www.douban.com",
     "strategy": "cookie",
@@ -11295,7 +11295,7 @@
         "name": "draft",
         "type": "boolean",
         "required": false,
-        "help": "仅保存草稿，不公开发布（豆瓣日记草稿等同于 autosave）"
+        "help": "仅保存草稿（私有，不公开发布）"
       },
       {
         "name": "execute",
