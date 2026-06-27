@@ -229,10 +229,14 @@ export const juejinProfile = {
     },
 
     // ── 页面内发布函数 ──────────────────────────────────────────────────────
-    // 移植自 Wechatsync JuejinAdapter.publish()
-    // 掘金只支持创建草稿（API 不提供一步发布，发布需在编辑器内手动操作）。
-    // I = { title, content, draftOnly }；content 已完成图片转存（markdown）。
+    // 移植自 Wechatsync JuejinAdapter.publish()，并扩展正式发布能力。
+    // I = { title, content, draftOnly, params }；content 已完成图片转存（markdown）。
+    // I.params = { category, tags:[...], brief }（发布所需参数，draftOnly 时可空）。
+    // 发布流程：创建草稿（API）→ 发布草稿（API content_api/v1/article/publish）。
+    // 分类/标签按「名称精确匹配」解析为 ID，找不到即报错——**绝不 fallback 默认值**。
     publish: async (I, PP) => {
+        const p = I.params || {};
+
         // ── 获取 CSRF token ────────────────────────────────────────────────
         // HEAD api.juejin.cn/user_api/v1/sys/token，取响应头 x-ware-csrf-token
         // 格式："0,<实际token>,86370000,success,<session_id>"，取 parts[1]
@@ -255,25 +259,79 @@ export const juejinProfile = {
             // CSRF 获取失败时继续尝试（部分环境可能无此头）
         }
 
-        // ── 创建草稿 ───────────────────────────────────────────────────────
-        const createHeaders = {
-            'Content-Type': 'application/json',
-        };
-        if (csrfToken) createHeaders['x-secsdk-csrf-token'] = csrfToken;
+        const jsonHeaders = { 'Content-Type': 'application/json' };
+        if (csrfToken) jsonHeaders['x-secsdk-csrf-token'] = csrfToken;
 
+        // ── 解析分类名 → category_id（精确匹配，找不到报错，不 fallback）──────
+        let categoryId = '0';
+        if (p.category) {
+            let catList = [];
+            try {
+                const cr = await fetch('https://api.juejin.cn/tag_api/v1/query_category_briefs', { method: 'GET', credentials: 'include' });
+                const cd = await cr.json();
+                catList = (cd && cd.data) || [];
+            } catch (e) {
+                return { ok: false, stage: 'category', message: '获取掘金分类列表失败：' + String((e && e.message) || e) };
+            }
+            const hit = catList.find((c) => c.category_name === p.category);
+            if (!hit) {
+                return { ok: false, stage: 'category', message: '未找到分类「' + p.category + '」，可选：' + catList.map((c) => c.category_name).join(' / ') };
+            }
+            categoryId = String(hit.category_id);
+        }
+
+        // ── 解析标签名 → tag_ids（逐个精确匹配，找不到报错，不 fallback）─────
+        const tagIds = [];
+        if (p.tags && p.tags.length) {
+            for (const name of p.tags) {
+                let tagList = [];
+                try {
+                    const tr = await fetch('https://api.juejin.cn/tag_api/v1/query_tag_list', {
+                        method: 'POST', credentials: 'include', headers: jsonHeaders,
+                        body: JSON.stringify({ cursor: '0', key_word: name, limit: 20, sort_type: 1 }),
+                    });
+                    const td = await tr.json();
+                    tagList = ((td && td.data) || []).map((t) => (t && t.tag) ? t.tag : t);
+                } catch (e) {
+                    return { ok: false, stage: 'tag', message: '搜索标签「' + name + '」失败：' + String((e && e.message) || e) };
+                }
+                const hit = tagList.find((t) => String(t.tag_name || '').toLowerCase() === String(name).toLowerCase());
+                if (!hit) {
+                    const avail = tagList.slice(0, 8).map((t) => t.tag_name).filter(Boolean).join(' / ');
+                    return { ok: false, stage: 'tag', message: '未找到标签「' + name + '」（精确名匹配）' + (avail ? '；相近：' + avail : '') };
+                }
+                tagIds.push(String(hit.tag_id));
+            }
+        }
+
+        // ── 发布必填校验（绝不 fallback 默认值）─────────────────────────────
+        if (!I.draftOnly) {
+            if (categoryId === '0') {
+                return { ok: false, stage: 'validate', message: '发布掘金文章必须指定分类：--category <后端|前端|Android|iOS|人工智能|开发工具|代码人生|阅读>' };
+            }
+            if (!tagIds.length) {
+                return { ok: false, stage: 'validate', message: '发布掘金文章必须指定标签：--tags <标签名,标签名>（至少一个，按名精确匹配）' };
+            }
+            if (!String(p.brief || '').trim()) {
+                return { ok: false, stage: 'validate', message: '发布掘金文章必须填写摘要：--brief <摘要>（掘金要求约 50-100 字，不可留空）' };
+            }
+        }
+
+        // ── 创建草稿 ───────────────────────────────────────────────────────
         const createResp = await fetch('https://api.juejin.cn/content_api/v1/article_draft/create', {
             method: 'POST',
             credentials: 'include',
-            headers: createHeaders,
+            headers: jsonHeaders,
             body: JSON.stringify({
-                brief_content: '',
-                category_id: '0',
+                brief_content: p.brief || '',
+                category_id: categoryId,
                 cover_image: '',
                 edit_type: 10,
-                html_content: 'deprecated',
+                html_content: '',
                 link_url: '',
                 mark_content: I.content,
-                tag_ids: [],
+                tag_ids: tagIds,
+                theme_ids: [],
                 title: I.title,
             }),
         });
@@ -295,9 +353,39 @@ export const juejinProfile = {
         const draftId = String(createData.data.id);
         const draftUrl = 'https://juejin.cn/editor/drafts/' + draftId;
 
-        // 掘金 API 仅支持草稿创建；发布须在编辑器内手动操作。
-        // 无论 draftOnly 值，均返回草稿 URL（draft:true）。
-        return { ok: true, draft: true, id: draftId, url: draftUrl };
+        // 仅草稿：返回草稿编辑器地址。
+        if (I.draftOnly) {
+            return { ok: true, draft: true, id: draftId, url: draftUrl };
+        }
+
+        // ── 发布草稿（content_api/v1/article/publish）────────────────────────
+        // 实测 body 仅需 {draft_id, sync_to_org, column_ids}（draft_id 为字符串，
+        // 服务端 Go 结构体 json:"draft_id,string"）。草稿在 create 时已带齐
+        // category/tags/brief，无需单独 update。
+        const pubResp = await fetch('https://api.juejin.cn/content_api/v1/article/publish', {
+            method: 'POST',
+            credentials: 'include',
+            headers: jsonHeaders,
+            body: JSON.stringify({
+                draft_id: draftId,
+                sync_to_org: false,
+                column_ids: [],
+            }),
+        });
+        const pubText = await pubResp.text();
+        let pubData = null;
+        try { pubData = JSON.parse(pubText); } catch (e) {}
+        if (!pubResp.ok) {
+            return { ok: false, stage: 'publish', status: pubResp.status, message: pubText.slice(0, 300), id: draftId, url: draftUrl };
+        }
+        if (pubData && pubData.err_no && pubData.err_no !== 0) {
+            return { ok: false, stage: 'publish', status: pubResp.status, message: pubData.err_msg || ('发布失败: err_no=' + pubData.err_no), id: draftId, url: draftUrl };
+        }
+        const articleId = pubData && pubData.data && String(pubData.data.article_id || pubData.data.id || '');
+        if (!articleId) {
+            return { ok: false, stage: 'publish', status: pubResp.status, message: pubText.slice(0, 300), id: draftId, url: draftUrl };
+        }
+        return { ok: true, draft: false, id: articleId, url: 'https://juejin.cn/post/' + articleId };
     },
 };
 
@@ -350,7 +438,7 @@ cli({
     site: 'juejin',
     name: 'article',
     access: 'write',
-    description: '发布掘金文章（草稿）。正文默认为 Markdown；图片自动转存至掘金图床（字节 ImageX）。',
+    description: '发布掘金文章。默认正式发布（需 --category 和 --tags）；加 --draft 仅存草稿。正文默认 Markdown；图片自动转存至掘金图床（字节 ImageX）。',
     domain: 'juejin.cn',
     strategy: Strategy.COOKIE,
     browser: true,
@@ -359,7 +447,10 @@ cli({
         { name: 'text', positional: true, help: '文章正文（默认 Markdown；传 --html 则视为 HTML）' },
         { name: 'file', help: '正文文件路径（UTF-8 编码，默认 Markdown）' },
         { name: 'html', type: 'boolean', help: '将正文视为原始 HTML 而非 Markdown' },
-        { name: 'draft', type: 'boolean', help: '仅保存草稿，不发布（掘金 API 目前只支持草稿，此选项保留兼容性）' },
+        { name: 'category', help: '【正式发布必填】分类名（精确匹配）：后端 / 前端 / Android / iOS / 人工智能 / 开发工具 / 代码人生 / 阅读' },
+        { name: 'tags', help: '【正式发布必填】标签名，逗号分隔，至少一个（按名精确匹配掘金标签库，如 "Linux,后端"）' },
+        { name: 'brief', help: '【正式发布必填】文章摘要，掘金要求约 50-100 字（不做自动截取，必须显式提供）' },
+        { name: 'draft', type: 'boolean', help: '仅保存草稿，不发布（草稿无需分类/标签）' },
         { name: 'execute', type: 'boolean', help: '确认执行写操作。不加此参数则拒绝写入。' },
     ],
     columns: ['status', 'outcome', 'message', 'target_type', 'target', 'created_target', 'created_url'],
@@ -373,17 +464,31 @@ cli({
         const body = await resolvePayload(kwargs);
         const draftOnly = Boolean(kwargs.draft);
 
+        // 解析发布参数（分类/标签/摘要）。标签按逗号拆分、去空白、去空项。
+        const tags = String(kwargs.tags ?? '')
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean);
+        const publishParams = {
+            category: typeof kwargs.category === 'string' ? kwargs.category.trim() : '',
+            tags,
+            brief: typeof kwargs.brief === 'string' ? kwargs.brief : '',
+        };
+
         const result = await publishArticle(page, {
             title,
             body,
             format: kwargs.html ? 'html' : 'markdown',
             draftOnly,
             profile: juejinProfile,
+            publishParams,
         });
 
         const upN = (result.images.uploaded.length) | 0;
         const failN = (result.images.failed.length) | 0;
-        let message = '草稿已保存至掘金（需在编辑器内手动发布）';
+        let message = result.draft
+            ? '草稿已保存至掘金（需在编辑器内手动发布）'
+            : '文章已正式发布至掘金';
         if (upN || failN) {
             message += '；图片：' + upN + ' 张已转存' + (failN ? '，' + failN + ' 张失败' : '');
         }
@@ -391,7 +496,7 @@ cli({
             message,
             'article',
             '',
-            'draft',
+            result.draft ? 'draft' : 'publish',
             { created_target: 'article:' + result.id, created_url: result.url },
         );
     },

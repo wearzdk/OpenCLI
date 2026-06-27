@@ -9053,7 +9053,7 @@
   {
     "site": "csdn",
     "name": "article",
-    "description": "发布 CSDN 博客文章。正文默认为 Markdown，图片自动转存到 CSDN 图床。",
+    "description": "发布 CSDN 博客文章。默认正式发布，加 --draft 仅存草稿。正文默认 Markdown，图片自动转存到 CSDN 图床。",
     "access": "write",
     "domain": "editor.csdn.net",
     "strategy": "cookie",
@@ -9086,6 +9086,24 @@
         "help": "将正文视为 HTML 而非 Markdown"
       },
       {
+        "name": "category",
+        "type": "str",
+        "required": false,
+        "help": "个人专栏名（CSDN 的「分类」即个人专栏），逗号分隔最多 3 个；合法值用 `csdn columns` 列举。可空=不归专栏"
+      },
+      {
+        "name": "tags",
+        "type": "str",
+        "required": false,
+        "help": "标签，自由文本逗号分隔最多 5 个（CSDN 标签是自由词，无需查接口）。可空"
+      },
+      {
+        "name": "description",
+        "type": "str",
+        "required": false,
+        "help": "文章摘要，最多 256 字（可空，CSDN 自动截取正文）"
+      },
+      {
         "name": "draft",
         "type": "boolean",
         "required": false,
@@ -9110,6 +9128,25 @@
     "type": "js",
     "modulePath": "csdn/article.js",
     "sourceFile": "csdn/article.js",
+    "navigateBefore": "https://editor.csdn.net"
+  },
+  {
+    "site": "csdn",
+    "name": "columns",
+    "description": "列出当前用户的 CSDN 个人专栏（id + 名称），供 `csdn article --category` 取合法专栏名。",
+    "access": "read",
+    "domain": "editor.csdn.net",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "column_id",
+      "column_name",
+      "paid"
+    ],
+    "type": "js",
+    "modulePath": "csdn/columns.js",
+    "sourceFile": "csdn/columns.js",
     "navigateBefore": "https://editor.csdn.net"
   },
   {
@@ -19592,7 +19629,7 @@
   {
     "site": "juejin",
     "name": "article",
-    "description": "发布掘金文章（草稿）。正文默认为 Markdown；图片自动转存至掘金图床（字节 ImageX）。",
+    "description": "发布掘金文章。默认正式发布（需 --category 和 --tags）；加 --draft 仅存草稿。正文默认 Markdown；图片自动转存至掘金图床（字节 ImageX）。",
     "access": "write",
     "domain": "juejin.cn",
     "strategy": "cookie",
@@ -19625,10 +19662,28 @@
         "help": "将正文视为原始 HTML 而非 Markdown"
       },
       {
+        "name": "category",
+        "type": "str",
+        "required": false,
+        "help": "【正式发布必填】分类名（精确匹配）：后端 / 前端 / Android / iOS / 人工智能 / 开发工具 / 代码人生 / 阅读"
+      },
+      {
+        "name": "tags",
+        "type": "str",
+        "required": false,
+        "help": "【正式发布必填】标签名，逗号分隔，至少一个（按名精确匹配掘金标签库，如 \"Linux,后端\"）"
+      },
+      {
+        "name": "brief",
+        "type": "str",
+        "required": false,
+        "help": "【正式发布必填】文章摘要，掘金要求约 50-100 字（不做自动截取，必须显式提供）"
+      },
+      {
         "name": "draft",
         "type": "boolean",
         "required": false,
-        "help": "仅保存草稿，不发布（掘金 API 目前只支持草稿，此选项保留兼容性）"
+        "help": "仅保存草稿，不发布（草稿无需分类/标签）"
       },
       {
         "name": "execute",
@@ -19649,6 +19704,24 @@
     "type": "js",
     "modulePath": "juejin/article.js",
     "sourceFile": "juejin/article.js",
+    "navigateBefore": "https://juejin.cn"
+  },
+  {
+    "site": "juejin",
+    "name": "categories",
+    "description": "列出掘金全部文章分类（id + 名称），供 `juejin article --category` 取准确分类名。",
+    "access": "read",
+    "domain": "juejin.cn",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "category_id",
+      "category_name"
+    ],
+    "type": "js",
+    "modulePath": "juejin/categories.js",
+    "sourceFile": "juejin/categories.js",
     "navigateBefore": "https://juejin.cn"
   },
   {
@@ -19731,6 +19804,32 @@
     "type": "js",
     "modulePath": "juejin/recommend.js",
     "sourceFile": "juejin/recommend.js"
+  },
+  {
+    "site": "juejin",
+    "name": "tags",
+    "description": "按关键词搜索掘金标签，返回标签 id 和名称，供 `juejin article --tags` 取准确标签名。",
+    "access": "read",
+    "domain": "juejin.cn",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "keyword",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "标签搜索关键词，如 \"Linux\"、\"AI\""
+      }
+    ],
+    "columns": [
+      "tag_id",
+      "tag_name"
+    ],
+    "type": "js",
+    "modulePath": "juejin/tags.js",
+    "sourceFile": "juejin/tags.js",
+    "navigateBefore": "https://juejin.cn"
   },
   {
     "site": "juejin",
@@ -26340,7 +26439,7 @@
   {
     "site": "oschina",
     "name": "article",
-    "description": "发布文章到开源中国（草稿，需在网站确认发布）。正文默认为 Markdown，外链图片自动转存到开源中国图床。",
+    "description": "发布文章到开源中国博客。默认正式发布，加 --draft 仅存草稿。正文默认 Markdown，外链图片自动转存到开源中国图床。",
     "access": "write",
     "domain": "my.oschina.net",
     "strategy": "cookie",
@@ -26373,10 +26472,16 @@
         "help": "将正文视为原始 HTML 而非 Markdown"
       },
       {
+        "name": "category",
+        "type": "str",
+        "required": false,
+        "help": "个人博客分类名（精确匹配），合法值用 `oschina catalogs` 列举；可空=不分类"
+      },
+      {
         "name": "draft",
         "type": "boolean",
         "required": false,
-        "help": "存草稿（开源中国始终存草稿，此参数保留供接口一致性）"
+        "help": "仅存草稿，不发布"
       },
       {
         "name": "execute",
@@ -26397,6 +26502,24 @@
     "type": "js",
     "modulePath": "oschina/article.js",
     "sourceFile": "oschina/article.js",
+    "navigateBefore": "https://my.oschina.net"
+  },
+  {
+    "site": "oschina",
+    "name": "catalogs",
+    "description": "列出当前用户的开源中国个人博客分类（id + 名称），供 `oschina article --category` 取合法分类名。",
+    "access": "read",
+    "domain": "my.oschina.net",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "catalog_id",
+      "catalog_name"
+    ],
+    "type": "js",
+    "modulePath": "oschina/catalogs.js",
+    "sourceFile": "oschina/catalogs.js",
     "navigateBefore": "https://my.oschina.net"
   },
   {

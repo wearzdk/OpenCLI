@@ -222,10 +222,15 @@ const csdnProfile = {
         return { isAuthenticated: false };
     },
 
-    // 页面内发布函数（移植自 Wechatsync CSDNAdapter.publish）
-    // CSDN 保存草稿/发布的 API 也需要 HMAC-SHA256 签名。
-    // I = { title, content, draftOnly }，content 已完成图片转存（仍为 Markdown）。
+    // 页面内发布函数（移植自 Wechatsync CSDNAdapter.publish，并补正式发布分支）。
+    // CSDN 保存草稿/发布是**同一个 saveArticle 接口**：草稿 status:2/pubStatus:'draft'，
+    // 正式发布 status:0/pubStatus:'publish'（多源印证：cydmacro 真实抓包 data.txt、
+    // k8scat/Articli markdown.go ArticleStatusPublish=0、terwer csdnWebAdaptor addPost）。
+    // 同样需要 HMAC-SHA256 签名。
+    // I = { title, content, html, draftOnly, params }，content 已完成图片转存（Markdown）。
+    // I.params = { categories, tags, description }（均为 CSDN 可选项，缺省即不归专栏/无标签）。
     publish: async (I, PP) => {
+        var P = I.params || {};
         var API_KEY = '203803574';
         var API_SECRET = '9znpamsyl2c7cdrr9sas0le9vbc3r6ba';
 
@@ -260,7 +265,8 @@ const csdnProfile = {
             };
         }
 
-        // 保存草稿（status:2 = 草稿，pubStatus:'draft'）
+        // 草稿 status:2/pubStatus:'draft'；正式发布 status:0/pubStatus:'publish'。
+        var isPublish = !I.draftOnly;
         var saveApiPath = '/blog-console-api/v3/mdeditor/saveArticle';
         var saveHeaders = await buildPostHeaders(saveApiPath);
         var saveRes = await fetch('https://bizapi.csdn.net' + saveApiPath, {
@@ -273,20 +279,21 @@ const csdnProfile = {
                 content: I.html || '',   // CSDN 同时要 HTML（忠实 Wechatsync：传 article.html）
                 readType: 'public',
                 level: 0,
-                tags: '',
-                status: 2,            // 2 = 草稿
-                categories: '',
+                tags: P.tags || '',                  // 自由文本，逗号分隔，<=5；可空
+                status: isPublish ? 0 : 2,
+                categories: P.categories || '',      // 个人专栏名，逗号分隔，<=3；合法值由 `csdn columns` 列举；可空
                 type: 'original',
                 original_link: '',
                 authorized_status: false,
+                Description: P.description || '',     // 摘要，<=256；可空（CSDN 自动截取）
                 not_auto_saved: '1',
                 source: 'pc_mdeditor',
                 cover_images: [],
-                cover_type: 1,
+                cover_type: 0,                       // 无封面=0（按 cydmacro/Articli 约定）
                 is_new: 1,
                 vote_id: 0,
                 resource_id: '',
-                pubStatus: 'draft',
+                pubStatus: isPublish ? 'publish' : 'draft',
                 creator_activity_id: '',
             }),
         });
@@ -296,19 +303,19 @@ const csdnProfile = {
         if (!saveRes.ok || !saveData || saveData.code !== 200 || !saveData.data || !saveData.data.id) {
             return {
                 ok: false,
-                stage: 'save',
+                stage: isPublish ? 'publish' : 'save',
                 status: saveRes.status,
                 message: (saveData && (saveData.msg || saveData.message)) || saveText.slice(0, 300),
             };
         }
 
         var postId = String(saveData.data.id);
-        var draftUrl = 'https://editor.csdn.net/md?articleId=' + postId;
-
-        // 忠实 Wechatsync：CSDN 适配器只走 saveArticle(status:2) 存草稿，没有「一步正式发布」
-        // 接口。之前 fork 杜撰的 status:0/pubStatus:'publish' 第二步在源码里毫无依据，线上极可能
-        // 报错或建重复文章，已删除。正式发布请在 CSDN 编辑器里点发布，或后续单独探路验证真实接口。
-        return { ok: true, draft: true, id: postId, url: draftUrl };
+        if (!isPublish) {
+            return { ok: true, draft: true, id: postId, url: 'https://editor.csdn.net/md?articleId=' + postId };
+        }
+        // 正式发布：优先用返回的已发布文章链接，缺省则按 details 拼。
+        var pubUrl = (saveData.data && saveData.data.url) || ('https://blog.csdn.net/article/details/' + postId);
+        return { ok: true, draft: false, id: postId, url: pubUrl };
     },
 };
 
@@ -320,7 +327,7 @@ cli({
     site: 'csdn',
     name: 'article',
     access: 'write',
-    description: '发布 CSDN 博客文章。正文默认为 Markdown，图片自动转存到 CSDN 图床。',
+    description: '发布 CSDN 博客文章。默认正式发布，加 --draft 仅存草稿。正文默认 Markdown，图片自动转存到 CSDN 图床。',
     domain: 'editor.csdn.net',
     strategy: Strategy.COOKIE,
     browser: true,
@@ -329,6 +336,9 @@ cli({
         { name: 'text', positional: true, help: '正文（Markdown，与 --file 二选一）' },
         { name: 'file', help: '正文文件路径（UTF-8 编码 Markdown 文件）' },
         { name: 'html', type: 'boolean', help: '将正文视为 HTML 而非 Markdown' },
+        { name: 'category', help: '个人专栏名（CSDN 的「分类」即个人专栏），逗号分隔最多 3 个；合法值用 `csdn columns` 列举。可空=不归专栏' },
+        { name: 'tags', help: '标签，自由文本逗号分隔最多 5 个（CSDN 标签是自由词，无需查接口）。可空' },
+        { name: 'description', help: '文章摘要，最多 256 字（可空，CSDN 自动截取正文）' },
         { name: 'draft', type: 'boolean', help: '仅保存为草稿，不发布' },
         { name: 'execute', type: 'boolean', help: '真正执行写操作，不加此参数则拒绝发布' },
     ],
@@ -341,12 +351,19 @@ cli({
         const body = await resolvePayload(kwargs);
         const draftOnly = Boolean(kwargs.draft);
 
+        const publishParams = {
+            categories: typeof kwargs.category === 'string' ? kwargs.category.trim() : '',
+            tags: typeof kwargs.tags === 'string' ? kwargs.tags.trim() : '',
+            description: typeof kwargs.description === 'string' ? kwargs.description : '',
+        };
+
         const result = await publishArticle(page, {
             title,
             body,
             format: kwargs.html ? 'html' : 'markdown',
             draftOnly,
             profile: csdnProfile,
+            publishParams,
         });
 
         const upN = result.images.uploaded.length | 0;

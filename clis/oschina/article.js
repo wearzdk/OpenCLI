@@ -51,8 +51,13 @@ export const oschinaProfile = {
         return { isAuthenticated: true, userId, username, avatar };
     },
     // publish：保存为草稿（开源中国只提供草稿接口，后续须在网站手动发布）。
-    // I = { title, content, draftOnly }，content 已完成图片转存，为 Markdown 正文。
+    // I = { title, content, draftOnly, params }，content 已完成图片转存，为 Markdown 正文。
+    // I.params = { category }（个人博客分类名，可空=不分类；按名解析为 catalog id）。
+    // 草稿：POST api/draft/save_draft（contentType 1=md/2=html）。
+    // 正式发布：POST blog/web/add（contentType 0=html/1=md，与草稿相反——已从 OSChina 自家
+    //   bundle writeType-CEJXAhyC.js 的 `ee.value==='1'?0:1` 确认；type:'1'=原创）。
     publish: async (I) => {
+        const P = I.params || {};
         // 先取当前用户 ID（publish 在页面内跑，无法从 Node 侧传入）
         let userId = '';
         try {
@@ -69,35 +74,77 @@ export const oschinaProfile = {
             return { ok: false, stage: 'auth', status: 401, message: '未登录开源中国，无法获取用户 ID' };
         }
 
-        const resp = await fetch('https://apiv1.oschina.net/oschinapi/api/draft/save_draft', {
+        // 解析博客分类名 → catalog id（精确匹配，找不到报错不 fallback；不传则 0=不分类）
+        let catalog = 0;
+        if (P.category) {
+            let list = [];
+            try {
+                const cr = await fetch('https://apiv1.oschina.net/oschinapi/blog_catalog/list_by_user', { credentials: 'include' });
+                const cd = await cr.json();
+                list = (cd && cd.result) || [];
+            } catch (e) {
+                return { ok: false, stage: 'category', message: '获取开源中国博客分类失败：' + String((e && e.message) || e) };
+            }
+            const hit = list.find((c) => String(c.name) === String(P.category));
+            if (!hit) {
+                return { ok: false, stage: 'category', message: '未找到博客分类「' + P.category + '」，可选：' + (list.map((c) => c.name).join(' / ') || '（你还没有任何分类）') };
+            }
+            catalog = hit.id;
+        }
+
+        // ── 草稿：save_draft ────────────────────────────────────────────────
+        if (I.draftOnly) {
+            const resp = await fetch('https://apiv1.oschina.net/oschinapi/api/draft/save_draft', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: I.title,
+                    user: Number(userId),
+                    content: I.content,
+                    contentType: 1, // save_draft：1=Markdown
+                    catalog,
+                    originUrl: '',
+                    privacy: true,
+                    disableComment: false,
+                }),
+            });
+            const text = await resp.text();
+            let data = null;
+            try { data = JSON.parse(text); } catch (e) {}
+            if (!resp.ok || !data || !data.success || !data.result || !data.result.id) {
+                return { ok: false, stage: 'save_draft', status: resp.status, message: (data && data.message) || text.slice(0, 300) };
+            }
+            const draftId = String(data.result.id);
+            return { ok: true, draft: true, id: draftId, url: 'https://my.oschina.net/u/' + userId + '/blog/write/draft/' + draftId };
+        }
+
+        // ── 正式发布：blog/web/add ──────────────────────────────────────────
+        const resp = await fetch('https://apiv1.oschina.net/oschinapi/blog/web/add', {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 title: I.title,
-                user: Number(userId),
                 content: I.content,
-                contentType: 1, // 1=Markdown
-                catalog: 0,
+                contentType: 1,   // blog/web/add：1=Markdown（与 save_draft 相反，已 bundle 确认）
+                type: '1',        // 1=原创
                 originUrl: '',
-                privacy: true,
+                catalog,
+                privacy: false,   // 公开发布
                 disableComment: false,
+                isAiRelated: false,
+                user: Number(userId),
             }),
         });
-
         const text = await resp.text();
         let data = null;
         try { data = JSON.parse(text); } catch (e) {}
-
-        if (!resp.ok || !data || !data.success || !data.result || !data.result.id) {
-            return { ok: false, stage: 'save_draft', status: resp.status, message: (data && data.message) || text.slice(0, 300) };
+        if (!resp.ok || !data || data.code !== 200 || data.result == null) {
+            return { ok: false, stage: 'publish', status: resp.status, message: (data && (data.message || data.msg)) || text.slice(0, 300) };
         }
-
-        const draftId = String(data.result.id);
-        // 开源中国草稿地址
-        const draftUrl = 'https://my.oschina.net/u/' + userId + '/blog/write/draft/' + draftId;
-
-        return { ok: true, draft: true, id: draftId, url: draftUrl };
+        const blogId = String(data.result);
+        return { ok: true, draft: false, id: blogId, url: 'https://my.oschina.net/u/' + userId + '/blog/' + blogId };
     },
 };
 
@@ -136,7 +183,7 @@ cli({
     site: 'oschina',
     name: 'article',
     access: 'write',
-    description: '发布文章到开源中国（草稿，需在网站确认发布）。正文默认为 Markdown，外链图片自动转存到开源中国图床。',
+    description: '发布文章到开源中国博客。默认正式发布，加 --draft 仅存草稿。正文默认 Markdown，外链图片自动转存到开源中国图床。',
     domain: 'my.oschina.net',
     strategy: Strategy.COOKIE,
     browser: true,
@@ -145,7 +192,8 @@ cli({
         { name: 'text', positional: true, help: '文章正文（默认 Markdown；--html 表示原始 HTML）' },
         { name: 'file', help: '从文件读取正文（UTF-8，默认 Markdown）' },
         { name: 'html', type: 'boolean', help: '将正文视为原始 HTML 而非 Markdown' },
-        { name: 'draft', type: 'boolean', help: '存草稿（开源中国始终存草稿，此参数保留供接口一致性）' },
+        { name: 'category', help: '个人博客分类名（精确匹配），合法值用 `oschina catalogs` 列举；可空=不分类' },
+        { name: 'draft', type: 'boolean', help: '仅存草稿，不发布' },
         { name: 'execute', type: 'boolean', help: '真正执行写操作；不加此参数命令拒绝写入' },
     ],
     columns: ['status', 'outcome', 'message', 'target_type', 'target', 'created_target', 'created_url'],
@@ -155,18 +203,23 @@ cli({
         const title = String(kwargs.title ?? '').trim();
         if (!title) throw new CliError('INVALID_INPUT', '文章标题不能为空');
         const body = await resolvePayload(kwargs);
+        const draftOnly = Boolean(kwargs.draft);
+        const publishParams = {
+            category: typeof kwargs.category === 'string' ? kwargs.category.trim() : '',
+        };
 
         const result = await publishArticle(page, {
             title,
             body,
             format: kwargs.html ? 'html' : 'markdown',
-            draftOnly: true, // 开源中国只支持草稿接口，固定为草稿
+            draftOnly,
             profile: oschinaProfile,
+            publishParams,
         });
 
         const upN = result.images.uploaded.length | 0;
         const failN = result.images.failed.length | 0;
-        let message = '已保存到草稿箱（请在网站确认发布）';
+        let message = result.draft ? '已保存到开源中国草稿箱' : '已正式发布到开源中国博客';
         if (upN || failN) {
             message += `·图片：${upN} 张已转存${failN ? `，${failN} 张失败` : ''}`;
         }
@@ -175,8 +228,8 @@ cli({
             message,
             'article',
             '',
-            'draft',
-            { created_target: 'draft:' + result.id, created_url: result.url },
+            result.draft ? 'draft' : 'created',
+            { created_target: (result.draft ? 'draft:' : 'article:') + result.id, created_url: result.url },
         );
     },
 });

@@ -30,7 +30,8 @@ import { PAGE_RUNTIME } from './page-runtime.js';
  *   优先 uploadFn（页面内 `async (src, PP) => ({ url })`，用于掘金 ImageX 等多步上传）；
  *   否则用声明式 spec（form 传URL / json / binary-multipart，见 images.js / page-runtime）。
  * @property {Function} publish  页面内执行的发布函数 `async (I, PP) => ({ id, url, draft })`；
- *   I = { title, content, draftOnly }，PP = 页面运行时；只能用页面内全局（fetch/document）。
+ *   I = { title, content, markdown, html, draftOnly, params }，PP = 页面运行时；
+ *   只能用页面内全局（fetch/document）。I.params 为各平台发布参数（分类/标签/封面…），可空。
  */
 
 /**
@@ -110,7 +111,7 @@ export function buildPublishJs(ctx, publishFnSource, uploadFnSource) {
         'content = __t.content;\n' +
         // 调平台发布函数（页面内，带登录态）。content 已转存；I.markdown / I.html 是未转存的
         // 两份原始格式，供需要「同时塞 markdown 和 html」的平台（如 CSDN）取用。
-        'const __pub = await __publish({ title: I.title, content: content, markdown: I.markdown, html: I.html, draftOnly: I.draftOnly }, PP);\n' +
+        'const __pub = await __publish({ title: I.title, content: content, markdown: I.markdown, html: I.html, draftOnly: I.draftOnly, params: I.publishParams }, PP);\n' +
         // 转存统计：合并「声明式转存(__t)」与「平台 publish 内部自转存(__pub)」两处，
         // 否则像语雀那种在 publish 里自己转图的平台，成功/失败数会被丢掉。
         'var __upN = (__t.uploaded || []).concat((__pub && __pub.uploaded) || []);\n' +
@@ -133,10 +134,13 @@ export function buildPublishJs(ctx, publishFnSource, uploadFnSource) {
  * @param {'markdown'|'html'|'auto'} [args.format]
  * @param {boolean} [args.draftOnly]
  * @param {PlatformProfile} args.profile
+ * @param {object} [args.publishParams]  平台发布所需的额外参数（分类/标签/封面/摘要等），
+ *   原样注入页面内 publish 函数的 `I.params`。各平台自行约定字段；草稿平台可忽略。
+ *   发布参数必填项缺失时由各平台 publish 抛错，**不做 fallback 默认值**。
  * @returns {Promise<{ id: string, url: string, draft: boolean, images: { uploaded: Array, failed: Array } }>}
  */
 export async function publishArticle(page, args) {
-    const { title, body, format = 'auto', draftOnly = false, profile } = args;
+    const { title, body, format = 'auto', draftOnly = false, profile, publishParams = null } = args;
     if (!profile) throw new Error('publishArticle: profile is required');
     if (!profile.home) throw new Error('publishArticle: profile.home is required');
     if (typeof profile.publish !== 'function') throw new Error('publishArticle: profile.publish must be a function');
@@ -156,6 +160,7 @@ export async function publishArticle(page, args) {
         preprocessConfig: profile.preprocessConfig || null,
         imageSpec: profile.image?.spec || null,
         imageSkip: profile.image?.skip || [],
+        publishParams: publishParams,
     };
     const uploadFnSource = typeof profile.image?.uploadFn === 'function' ? profile.image.uploadFn.toString() : null;
     const js = buildPublishJs(ctx, profile.publish.toString(), uploadFnSource);
