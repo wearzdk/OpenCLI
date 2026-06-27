@@ -48,9 +48,13 @@ cli({
             + '}'
             + 'if (!token) return { __error: "获取思否 session token 失败，请确认已登录" };'
             + 'const name = ' + JSON.stringify(name) + ';'
-            + 'const r = await fetch("https://segmentfault.com/gateway/tag/" + encodeURIComponent(name), { credentials: "include", headers: { token: token, accept: "*/*" } });'
+            // 思否 /gateway 头：Token + Authorization Bearer（出处 _app bundle @563418：{Token:C,...,Authorization:"Bearer "+C}）
+            + 'const r = await fetch("https://segmentfault.com/gateway/tag/" + encodeURIComponent(name), { credentials: "include", headers: { token: token, Authorization: "Bearer " + token, accept: "*/*" } });'
             + 'const t = await r.text();'
             + 'let d; try { d = JSON.parse(t); } catch (e) { return { __error: "解析标签响应失败：" + t.slice(0, 200) }; }'
+            // 不能把 403/错误静默成「标签不存在」：思否 GET /gateway 还需 getUrl() 客户端签名（见 publish-rollout-status），
+            // 未带签名会返 403「非法请求」(body 是字符串)。此时必须抛错，绝不伪装成 exists:false。
+            + 'if (!r.ok || typeof d === "string") return { __error: "思否标签接口请求被拒（HTTP " + r.status + "）：" + (typeof d === "string" ? d : t.slice(0, 120)) + "。思否 GET /gateway 需客户端 URL 签名(getUrl/sign)，当前未实现，无法校验标签。" };'
             + 'const tag = d && d.tag;'
             + 'if (!tag || tag.id == null) return [{ exists: false, tag_id: "", tag_name: name }];'
             + 'return [{ exists: true, tag_id: String(tag.id), tag_name: String(tag.name || name) }];'

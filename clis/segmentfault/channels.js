@@ -45,6 +45,9 @@ cli({
             + 'const r = await fetch("https://segmentfault.com/gateway/channels", { credentials: "include", headers: { token: token, accept: "*/*" } });'
             + 'const t = await r.text();'
             + 'let d; try { d = JSON.parse(t); } catch (e) { return { __error: "解析频道响应失败：" + t.slice(0, 200) }; }'
+            // 不能把 403/错误静默成空列表：思否 GET /gateway 还需 getUrl() 客户端签名（见 publish-rollout-status），
+            // 未带签名返 403「非法请求」(body 是字符串)。此时必须抛错。
+            + 'if (!r.ok || typeof d === "string") return { __error: "思否频道接口请求被拒（HTTP " + r.status + "）：" + (typeof d === "string" ? d : t.slice(0, 120)) + "。思否 GET /gateway 需客户端 URL 签名(getUrl/sign)，当前未实现。" };'
             // 宽松取数组：直接数组 / {data} / {rows} / {channels}
             + 'let list = [];'
             + 'if (Array.isArray(d)) list = d;'
