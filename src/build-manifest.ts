@@ -44,7 +44,7 @@ const OUTPUT = getCliManifestPath(CLIS_DIR);
 //      wraps `cli(...)`. Without (2), shared-factory adapters
 //      (codex/cursor/chatwise new/status/dump/screenshot) match no `cli(`
 //      token at the top level and silently drop out of the manifest.
-const CLI_MODULE_PATTERN = /\bcli\s*\(|\bregisterSiteAuthCommands\s*\(|\bmake[A-Z]\w*Command\s*\(/;
+const CLI_MODULE_PATTERN = /\bcli\s*\(|\bregisterSiteAuthCommands\s*\(|\bregisterArticleLogin\s*\(|\bmake[A-Z]\w*Command\s*\(/;
 
 /**
  * Thrown by `loadManifestEntries` when an adapter file looks like a CLI

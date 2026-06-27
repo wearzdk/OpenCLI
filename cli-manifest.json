@@ -9322,6 +9322,36 @@
   },
   {
     "site": "csdn",
+    "name": "login",
+    "description": "打开 CSDN 登录页并等待浏览器完成登录（供桌面客户端引导登录）。",
+    "access": "write",
+    "domain": "csdn.net",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
+        "required": false,
+        "help": "等待用户完成登录的最长秒数"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "csdn/login.js",
+    "sourceFile": "csdn/login.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "csdn",
     "name": "whoami",
     "description": "查看当前登录的 CSDN 账号信息",
     "access": "read",
@@ -19936,6 +19966,36 @@
   },
   {
     "site": "juejin",
+    "name": "login",
+    "description": "打开掘金首页并等待浏览器完成登录（供桌面客户端引导登录）。",
+    "access": "write",
+    "domain": "juejin.cn",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
+        "required": false,
+        "help": "等待用户完成登录的最长秒数"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "juejin/login.js",
+    "sourceFile": "juejin/login.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "juejin",
     "name": "recommend",
     "description": "Juejin (掘金) homepage recommended article feed",
     "access": "read",
@@ -26692,6 +26752,36 @@
     "modulePath": "oschina/catalogs.js",
     "sourceFile": "oschina/catalogs.js",
     "navigateBefore": "https://my.oschina.net"
+  },
+  {
+    "site": "oschina",
+    "name": "login",
+    "description": "打开开源中国登录页并等待浏览器完成登录（供桌面客户端引导登录）。",
+    "access": "write",
+    "domain": "oschina.net",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
+        "required": false,
+        "help": "等待用户完成登录的最长秒数"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "oschina/login.js",
+    "sourceFile": "oschina/login.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
   },
   {
     "site": "oschina",
