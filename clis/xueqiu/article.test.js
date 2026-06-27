@@ -142,7 +142,7 @@ describe('publish 成功路径', () => {
         const ctx = {
             title: '测试文章',
             content: '# 标题\n\n正文内容',
-            draftOnly: false,
+            draftOnly: true,
             outputFormat: 'markdown',
             preprocessConfig: null,
             imageSpec: null,
@@ -178,7 +178,7 @@ describe('publish 成功路径', () => {
         const ctx = {
             title: '失败测试',
             content: '正文',
-            draftOnly: false,
+            draftOnly: true,
             outputFormat: 'markdown',
             preprocessConfig: null,
             imageSpec: null,
@@ -206,7 +206,7 @@ describe('publish 成功路径', () => {
         const ctx = {
             title: '鉴权失败测试',
             content: '正文',
-            draftOnly: false,
+            draftOnly: true,
             outputFormat: 'markdown',
             preprocessConfig: null,
             imageSpec: null,
@@ -262,7 +262,7 @@ describe('uploadFn 图片转存', () => {
         const ctx = {
             title: '带图文章',
             content,
-            draftOnly: false,
+            draftOnly: true,
             outputFormat: 'markdown',
             preprocessConfig: null,
             imageSpec: null,
@@ -302,7 +302,7 @@ describe('uploadFn 图片转存', () => {
         const ctx = {
             title: '已托管图片测试',
             content,
-            draftOnly: false,
+            draftOnly: true,
             outputFormat: 'markdown',
             preprocessConfig: null,
             imageSpec: null,
@@ -340,7 +340,7 @@ describe('publish 内部 markdown 转 HTML', () => {
         const ctx = {
             title: '渲染测试',
             content: markdown,
-            draftOnly: false,
+            draftOnly: true,
             outputFormat: 'markdown',
             preprocessConfig: null,
             imageSpec: null,
@@ -379,7 +379,7 @@ describe('publish 内部 markdown 转 HTML', () => {
         const ctx = {
             title: '分割线测试',
             content: markdown,
-            draftOnly: false,
+            draftOnly: true,
             outputFormat: 'markdown',
             preprocessConfig: null,
             imageSpec: null,
@@ -396,5 +396,110 @@ describe('publish 内部 markdown 转 HTML', () => {
         expect(html).not.toContain('<hr');
         expect(html).toContain('段落一');
         expect(html).toContain('段落二');
+    });
+});
+
+// ── 正式发布三步流程：save.json → session/token.json → update.json ────────────
+describe('正式发布（draftOnly:false）', () => {
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); delete globalThis.__xqUpdate; });
+
+    function ctxOf(extra) {
+        return Object.assign({
+            title: '正式发布文章',
+            content: '# 标题\n\n正文',
+            draftOnly: false,
+            outputFormat: 'markdown',
+            preprocessConfig: null,
+            imageSpec: null,
+            imageSkip: ['xueqiu.com', 'imedao.com'],
+            publishParams: { coverPic: '', showCoverPic: true, original: false, originalEventId: '', allowReward: false },
+        }, extra || {});
+    }
+
+    it('先建草稿拿 draft_id，再取 session_token，最后 POST update.json 并返回文章 id', async () => {
+        const draftId = 555001;
+        const postId = 555999;
+        const fetchImpl = vi.fn(async (url, opts) => {
+            if (url && url.includes('draft/save.json')) {
+                return { ok: true, status: 200, text: async () => JSON.stringify({ id: draftId }) };
+            }
+            if (url && url.includes('provider/session/token.json')) {
+                // 确认带了 api_path=/statuses/update.json
+                expect(String(url)).toContain('api_path=' + encodeURIComponent('/statuses/update.json'));
+                return { ok: true, status: 200, json: async () => ({ session_token: 'TKN-abc' }) };
+            }
+            if (url && url.includes('statuses/update.json')) {
+                globalThis.__xqUpdate = { url, body: opts && opts.body };
+                return { ok: true, status: 200, text: async () => JSON.stringify({ id: postId, user_id: 42 }) };
+            }
+            return { ok: true, status: 200, text: async () => '{}' };
+        });
+
+        const js = buildPublishJs(ctxOf(), xueqiuProfile.publish.toString(), null);
+        const p = evalPage(fetchImpl).evaluate(js);
+        await vi.runAllTimersAsync();
+        const result = await p;
+
+        expect(result.ok).toBe(true);
+        expect(result.draft).toBe(false);
+        expect(result.id).toBe(String(postId));
+        expect(result.url).toContain('/42/' + postId);
+
+        // update.json body 含正确字段
+        const body = new URLSearchParams(globalThis.__xqUpdate.body.toString());
+        expect(body.get('draft_id')).toBe(String(draftId));
+        expect(body.get('session_token')).toBe('TKN-abc');
+        expect(body.get('title')).toBe('正式发布文章');
+        expect(body.get('status')).toContain('<h4>标题</h4>'); // 发布字段名是 status
+        expect(body.get('legal_user_state')).toBe('open');
+        expect(body.get('original')).toBe('false');
+        expect(body.has('text')).toBe(false); // 发布不用草稿的 text 字段
+    });
+
+    it('取不到 session_token 时返回 ok:false stage:csrf', async () => {
+        const fetchImpl = vi.fn(async (url) => {
+            if (url && url.includes('draft/save.json')) {
+                return { ok: true, status: 200, text: async () => JSON.stringify({ id: 1 }) };
+            }
+            if (url && url.includes('provider/session/token.json')) {
+                return { ok: true, status: 200, json: async () => ({}) };
+            }
+            return { ok: true, status: 200, text: async () => '{}' };
+        });
+        const js = buildPublishJs(ctxOf(), xueqiuProfile.publish.toString(), null);
+        const p = evalPage(fetchImpl).evaluate(js);
+        await vi.runAllTimersAsync();
+        const result = await p;
+        expect(result.ok).toBe(false);
+        expect(result.stage).toBe('csrf');
+    });
+
+    it('原创活动事件不存在时返回 ok:false stage:original_event（不 fallback）', async () => {
+        const fetchImpl = vi.fn(async (url) => {
+            if (url && url.includes('draft/save.json')) {
+                return { ok: true, status: 200, text: async () => JSON.stringify({ id: 1 }) };
+            }
+            if (url && url.includes('original/original_event.json')) {
+                return { ok: true, status: 200, json: async () => ({ originalEvent: null }) };
+            }
+            return { ok: true, status: 200, text: async () => '{}' };
+        });
+        const js = buildPublishJs(ctxOf({ publishParams: { originalEventId: 'no-such', showCoverPic: true } }), xueqiuProfile.publish.toString(), null);
+        const p = evalPage(fetchImpl).evaluate(js);
+        await vi.runAllTimersAsync();
+        const result = await p;
+        expect(result.ok).toBe(false);
+        expect(result.stage).toBe('original_event');
+    });
+
+    it('封面图为外链时返回 ok:false stage:cover（必须雪球图床）', async () => {
+        const fetchImpl = vi.fn(async () => ({ ok: true, status: 200, text: async () => '{}' }));
+        const js = buildPublishJs(ctxOf({ publishParams: { coverPic: 'https://external.com/c.jpg', showCoverPic: true } }), xueqiuProfile.publish.toString(), null);
+        const p = evalPage(fetchImpl).evaluate(js);
+        await vi.runAllTimersAsync();
+        const result = await p;
+        expect(result.ok).toBe(false);
+        expect(result.stage).toBe('cover');
     });
 });

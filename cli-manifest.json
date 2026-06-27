@@ -3032,7 +3032,7 @@
   {
     "site": "baijiahao",
     "name": "article",
-    "description": "发布百家号文章（支持保存草稿）。正文默认 Markdown；图片自动转存到百家号图床。",
+    "description": "发布百家号文章。默认正式发布（需 --cover 封面），加 --draft 仅存草稿（草稿不需要封面）。正文默认 Markdown，图片自动转存到百家号图床。",
     "access": "write",
     "domain": "baijiahao.baidu.com",
     "strategy": "cookie",
@@ -3065,10 +3065,28 @@
         "help": "将正文视为原始 HTML 而非 Markdown"
       },
       {
+        "name": "cover",
+        "type": "str",
+        "required": false,
+        "help": "封面图 URL（正式发布必填；会先转存到百家号图床。草稿模式可不传）"
+      },
+      {
+        "name": "abstract",
+        "type": "str",
+        "required": false,
+        "help": "文章摘要（可空，正式发布时写入；草稿模式忽略）"
+      },
+      {
+        "name": "author",
+        "type": "str",
+        "required": false,
+        "help": "作者署名（可空，正式发布时写入；草稿模式忽略）"
+      },
+      {
         "name": "draft",
         "type": "boolean",
         "required": false,
-        "help": "仅保存草稿（百家号暂只支持草稿模式，此参数保留向后兼容）"
+        "help": "仅保存草稿，不正式发布（草稿不需要封面）"
       },
       {
         "name": "execute",
@@ -3089,6 +3107,46 @@
     "type": "js",
     "modulePath": "baijiahao/article.js",
     "sourceFile": "baijiahao/article.js",
+    "navigateBefore": "https://baijiahao.baidu.com"
+  },
+  {
+    "site": "baijiahao",
+    "name": "lists",
+    "description": "列出当前账号在百家号已发布的文章（article_id + 标题 + 阅读/推荐量 + 是否可撤回），供发布后回查幂等、取 article_id。",
+    "access": "read",
+    "domain": "baijiahao.baidu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "search",
+        "type": "str",
+        "required": false,
+        "help": "按标题关键词过滤（可空）"
+      },
+      {
+        "name": "page",
+        "type": "str",
+        "required": false,
+        "help": "页码，默认 1"
+      },
+      {
+        "name": "page_size",
+        "type": "str",
+        "required": false,
+        "help": "每页条数，默认 10"
+      }
+    ],
+    "columns": [
+      "article_id",
+      "title",
+      "read_amount",
+      "rec_amount",
+      "can_withdraw"
+    ],
+    "type": "js",
+    "modulePath": "baijiahao/lists.js",
+    "sourceFile": "baijiahao/lists.js",
     "navigateBefore": "https://baijiahao.baidu.com"
   },
   {
@@ -3566,7 +3624,7 @@
   {
     "site": "bilibili",
     "name": "article",
-    "description": "发布 B站专栏长文（opus/article）。正文默认 Markdown，图片自动转存至 B站图床，始终以草稿保存（需在创作中心手动发布）。",
+    "description": "发布 B站专栏长文（opus/article）。默认正式发布，加 --draft 仅存草稿。正文默认 Markdown，图片自动转存至 B站图床。正式发布必填 --category（合法值用 `bilibili categories` 取）。",
     "access": "write",
     "domain": "member.bilibili.com",
     "strategy": "cookie",
@@ -3599,10 +3657,60 @@
         "help": "将正文视为原始 HTML 而非 Markdown"
       },
       {
+        "name": "category",
+        "type": "str",
+        "required": false,
+        "help": "专栏分类 id（正式发布必填，叶子分类）。合法值用 `bilibili categories` 列举，禁止臆造。"
+      },
+      {
+        "name": "tid",
+        "type": "int",
+        "default": 4,
+        "required": false,
+        "help": "封面版式：4=单图 / 3=三图（按封面图数量定，默认 4）"
+      },
+      {
+        "name": "cover",
+        "type": "str",
+        "required": false,
+        "help": "封面图源 URL（可空）；会先经 upcover 上传到 B站图床再作 banner_url"
+      },
+      {
+        "name": "banner-url",
+        "type": "str",
+        "required": false,
+        "help": "封面图的 B站 CDN url（可空，已有则直接用，跳过 upcover 上传）"
+      },
+      {
+        "name": "summary",
+        "type": "str",
+        "required": false,
+        "help": "文章摘要/digest（可空）"
+      },
+      {
+        "name": "tags",
+        "type": "str",
+        "required": false,
+        "help": "标签，逗号拼接的自由文本字符串（可空，非闭合词表）"
+      },
+      {
+        "name": "reprint",
+        "type": "boolean",
+        "required": false,
+        "help": "标记为转载（默认原创）；加此参数则 original=0、reprint=1"
+      },
+      {
+        "name": "list-id",
+        "type": "int",
+        "default": 0,
+        "required": false,
+        "help": "文集编号（默认 0=不加入文集）"
+      },
+      {
         "name": "draft",
         "type": "boolean",
         "required": false,
-        "help": "仅保存草稿（B站专栏始终如此，此参数保留兼容性）"
+        "help": "仅保存草稿，不正式发布"
       },
       {
         "name": "execute",
@@ -3623,6 +3731,27 @@
     "type": "js",
     "modulePath": "bilibili/article.js",
     "sourceFile": "bilibili/article.js",
+    "navigateBefore": "https://member.bilibili.com"
+  },
+  {
+    "site": "bilibili",
+    "name": "categories",
+    "description": "列出 B站专栏文章分类树（id + 名称 + 父分类），供 `bilibili article --category` 取合法分类 id。优先选叶子分类（is_leaf=true）。",
+    "access": "read",
+    "domain": "member.bilibili.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "category_id",
+      "category_name",
+      "parent_id",
+      "parent_name",
+      "is_leaf"
+    ],
+    "type": "js",
+    "modulePath": "bilibili/categories.js",
+    "sourceFile": "bilibili/categories.js",
     "navigateBefore": "https://member.bilibili.com"
   },
   {
@@ -3771,6 +3900,48 @@
     "modulePath": "bilibili/download.js",
     "sourceFile": "bilibili/download.js",
     "navigateBefore": "https://www.bilibili.com"
+  },
+  {
+    "site": "bilibili",
+    "name": "drafts",
+    "description": "列出当前用户的 B站专栏草稿（aid + 标题 + 分类），用于发布后回查或取 aid。",
+    "access": "read",
+    "domain": "member.bilibili.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "keyword",
+        "type": "str",
+        "required": false,
+        "help": "按标题关键词过滤（可空）"
+      },
+      {
+        "name": "page",
+        "type": "int",
+        "default": 1,
+        "required": false,
+        "help": "页码，默认 1"
+      },
+      {
+        "name": "size",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "每页条数，默认 10"
+      }
+    ],
+    "columns": [
+      "aid",
+      "title",
+      "category",
+      "words",
+      "mtime"
+    ],
+    "type": "js",
+    "modulePath": "bilibili/drafts.js",
+    "sourceFile": "bilibili/drafts.js",
+    "navigateBefore": "https://member.bilibili.com"
   },
   {
     "site": "bilibili",
@@ -30558,7 +30729,7 @@
   {
     "site": "segmentfault",
     "name": "article",
-    "description": "发布文章到思否（SegmentFault）。正文默认 Markdown；图片自动转存到思否图床；创建草稿后需在网页上手动发布。",
+    "description": "发布文章到思否（SegmentFault）。默认正式发布，加 --draft 仅存草稿。正文默认 Markdown；外链图片自动转存到思否图床。正式发布必须指定标签（--tags），合法标签用 `segmentfault tags <名称>` 校验、频道用 `segmentfault channels` 列举。",
     "access": "write",
     "domain": "segmentfault.com",
     "strategy": "cookie",
@@ -30591,10 +30762,28 @@
         "help": "将正文视为原始 HTML 而非 Markdown"
       },
       {
+        "name": "tags",
+        "type": "str",
+        "required": false,
+        "help": "标签名，逗号分隔（正式发布必填，至少 1 个）。合法标签用 `segmentfault tags <名称>` 校验；草稿可省略。"
+      },
+      {
+        "name": "cover",
+        "type": "str",
+        "required": false,
+        "help": "封面图思否图床 url（选填）。需先把图片上传到思否图床得到 url。"
+      },
+      {
+        "name": "channels",
+        "type": "str",
+        "required": false,
+        "help": "频道名，逗号分隔（选填）。合法值用 `segmentfault channels` 列举。"
+      },
+      {
         "name": "draft",
         "type": "boolean",
         "required": false,
-        "help": "仅保存草稿（思否默认行为，此参数保留兼容性）"
+        "help": "仅保存草稿，不正式发布"
       },
       {
         "name": "execute",
@@ -30615,6 +30804,51 @@
     "type": "js",
     "modulePath": "segmentfault/article.js",
     "sourceFile": "segmentfault/article.js",
+    "navigateBefore": "https://segmentfault.com"
+  },
+  {
+    "site": "segmentfault",
+    "name": "channels",
+    "description": "列出思否文章频道（id + 名称），供 `segmentfault article --channels` 取合法频道名。",
+    "access": "read",
+    "domain": "segmentfault.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "channel_id",
+      "channel_name"
+    ],
+    "type": "js",
+    "modulePath": "segmentfault/channels.js",
+    "sourceFile": "segmentfault/channels.js",
+    "navigateBefore": "https://segmentfault.com"
+  },
+  {
+    "site": "segmentfault",
+    "name": "tags",
+    "description": "按名称校验思否标签是否存在并返回其真实 id，供 `segmentfault article --tags` 取合法标签。思否发文强制选标签，禁止臆造标签名/id。",
+    "access": "read",
+    "domain": "segmentfault.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "name",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "要校验的标签名（精确匹配，如 JavaScript / Vue.js）"
+      }
+    ],
+    "columns": [
+      "exists",
+      "tag_id",
+      "tag_name"
+    ],
+    "type": "js",
+    "modulePath": "segmentfault/tags.js",
+    "sourceFile": "segmentfault/tags.js",
     "navigateBefore": "https://segmentfault.com"
   },
   {
@@ -32747,7 +32981,7 @@
   {
     "site": "sohu",
     "name": "article",
-    "description": "发布文章到搜狐号（HTML 格式，图片自动转存到搜狐图床，保存为草稿）。",
+    "description": "发布文章到搜狐号（HTML 格式，外链图片自动转存到搜狐图床）。默认正式发布，加 --draft 仅存草稿。频道必填，合法值用 `sohu channels` 取。",
     "access": "write",
     "domain": "mp.sohu.com",
     "strategy": "cookie",
@@ -32780,10 +33014,52 @@
         "help": "将正文视为原始 HTML 而非 Markdown"
       },
       {
+        "name": "channel",
+        "type": "str",
+        "required": false,
+        "help": "频道名（精确匹配，必填），合法值用 `sohu channels` 列举"
+      },
+      {
+        "name": "category",
+        "type": "str",
+        "required": false,
+        "help": "分类名（精确匹配，依赖所选频道），合法值用 `sohu categories --channel <频道名>` 列举；不传=不限"
+      },
+      {
+        "name": "column",
+        "type": "str",
+        "required": false,
+        "help": "专栏名（精确匹配），合法值用 `sohu columns` 列举；不传=不归属专栏"
+      },
+      {
+        "name": "topics",
+        "type": "str",
+        "required": false,
+        "help": "话题名，逗号分隔（每个精确匹配），用 `sohu topics` 搜索取确切名"
+      },
+      {
+        "name": "cover",
+        "type": "str",
+        "required": false,
+        "help": "封面图 URL（须为搜狐图床地址）；可空"
+      },
+      {
+        "name": "brief",
+        "type": "str",
+        "required": false,
+        "help": "文章摘要；可空"
+      },
+      {
+        "name": "declare-original",
+        "type": "boolean",
+        "required": false,
+        "help": "声明原创（会触发搜狐原创校验，发布将被拦到原创确认流程）"
+      },
+      {
         "name": "draft",
         "type": "boolean",
         "required": false,
-        "help": "仅保存草稿（搜狐号暂无一键发布 API，此选项默认行为）"
+        "help": "仅保存草稿，不正式发布"
       },
       {
         "name": "execute",
@@ -32804,6 +33080,111 @@
     "type": "js",
     "modulePath": "sohu/article.js",
     "sourceFile": "sohu/article.js",
+    "navigateBefore": "https://mp.sohu.com"
+  },
+  {
+    "site": "sohu",
+    "name": "attributes",
+    "description": "列出搜狐号文章属性候选（id + 名称），供发布时选择文章属性。",
+    "access": "read",
+    "domain": "mp.sohu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "attr_id",
+      "attr_name"
+    ],
+    "type": "js",
+    "modulePath": "sohu/attributes.js",
+    "sourceFile": "sohu/attributes.js",
+    "navigateBefore": "https://mp.sohu.com"
+  },
+  {
+    "site": "sohu",
+    "name": "categories",
+    "description": "列出某个搜狐号频道下的分类（id + 名称），供 `sohu article --category` 取合法分类名。须用 --channel 指定频道名。",
+    "access": "read",
+    "domain": "mp.sohu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "channel",
+        "type": "str",
+        "required": true,
+        "help": "频道名（精确匹配），合法值用 `sohu channels` 列举"
+      }
+    ],
+    "columns": [
+      "category_id",
+      "category_name"
+    ],
+    "type": "js",
+    "modulePath": "sohu/categories.js",
+    "sourceFile": "sohu/categories.js",
+    "navigateBefore": "https://mp.sohu.com"
+  },
+  {
+    "site": "sohu",
+    "name": "channels",
+    "description": "列出当前搜狐号可发布的频道（id + 名称），供 `sohu article --channel` 取合法频道名。",
+    "access": "read",
+    "domain": "mp.sohu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "channel_id",
+      "channel_name"
+    ],
+    "type": "js",
+    "modulePath": "sohu/channels.js",
+    "sourceFile": "sohu/channels.js",
+    "navigateBefore": "https://mp.sohu.com"
+  },
+  {
+    "site": "sohu",
+    "name": "columns",
+    "description": "列出当前搜狐号的专栏（id + 名称），供 `sohu article --column` 取合法专栏名。",
+    "access": "read",
+    "domain": "mp.sohu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "column_id",
+      "column_name"
+    ],
+    "type": "js",
+    "modulePath": "sohu/columns.js",
+    "sourceFile": "sohu/columns.js",
+    "navigateBefore": "https://mp.sohu.com"
+  },
+  {
+    "site": "sohu",
+    "name": "topics",
+    "description": "列举/搜索搜狐号话题（id + 名称 + 类型），供 `sohu article --topics` 取确切话题名。不传 --keyword 为推荐话题，传则按关键词搜索。",
+    "access": "read",
+    "domain": "mp.sohu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "keyword",
+        "type": "str",
+        "required": false,
+        "help": "搜索关键词；不传则返回推荐话题列表"
+      }
+    ],
+    "columns": [
+      "topic_id",
+      "topic_name",
+      "topic_type"
+    ],
+    "type": "js",
+    "modulePath": "sohu/topics.js",
+    "sourceFile": "sohu/topics.js",
     "navigateBefore": "https://mp.sohu.com"
   },
   {
@@ -40860,7 +41241,7 @@
   {
     "site": "woshipm",
     "name": "article",
-    "description": "发布文章到人人都是产品经理（woshipm.com）。正文默认 Markdown，图片自动转存到站内图床。",
+    "description": "发布文章到人人都是产品经理（woshipm.com）。默认提交审核（正式发布），加 --draft 仅存草稿。正文默认 Markdown，图片自动转存到站内图床。注意：平台为审核制，提交后稿件进入待审核（pending），运营 24h 内人工审核通过才公开。",
     "access": "write",
     "domain": "www.woshipm.com",
     "strategy": "cookie",
@@ -40871,7 +41252,7 @@
         "type": "str",
         "required": true,
         "positional": true,
-        "help": "文章标题"
+        "help": "文章标题（非空，长度<=200）"
       },
       {
         "name": "text",
@@ -40896,13 +41277,13 @@
         "name": "draft",
         "type": "boolean",
         "required": false,
-        "help": "仅保存草稿，不发布（woshipm 目前仅支持草稿模式）"
+        "help": "仅保存草稿，不提交审核"
       },
       {
         "name": "execute",
         "type": "boolean",
         "required": false,
-        "help": "确认执行写操作。未传则拒绝写入。"
+        "help": "确认执行写操作。未传则拒绝写入。提交审核不可轻易撤回，请确认后再加此参数。"
       }
     ],
     "columns": [
@@ -42661,7 +43042,7 @@
   {
     "site": "xueqiu",
     "name": "article",
-    "description": "发布雪球文章（长文/草稿）。正文默认为 Markdown，图片自动转存到雪球图床。注意：雪球 API 只提供草稿保存，发布需在写作页手动操作。",
+    "description": "发布雪球文章（长文）。默认正式发布，加 --draft 仅存草稿。正文默认 Markdown，图片自动转存到雪球图床。",
     "access": "write",
     "domain": "mp.xueqiu.com",
     "strategy": "cookie",
@@ -42694,10 +43075,40 @@
         "help": "把正文视为原始 HTML 而非 Markdown"
       },
       {
+        "name": "cover-image",
+        "type": "str",
+        "required": false,
+        "help": "封面图地址（必须是雪球图床 imedao.com/xueqiu.com 的 url；外链请先上传）。可空=无封面"
+      },
+      {
+        "name": "no-cover",
+        "type": "boolean",
+        "required": false,
+        "help": "有封面图时不在文章头部展示封面（show_cover_pic=false）"
+      },
+      {
+        "name": "original",
+        "type": "boolean",
+        "required": false,
+        "help": "声明原创（需账号有原创权限，否则发布会被拒）。默认非原创"
+      },
+      {
+        "name": "original-event-id",
+        "type": "str",
+        "required": false,
+        "help": "参与的原创活动/事件 id（精确校验，找不到/已停用报错）；合法值用 `xueqiu events` 列举。可空=不参与"
+      },
+      {
+        "name": "allow-reward",
+        "type": "boolean",
+        "required": false,
+        "help": "允许打赏。默认不允许"
+      },
+      {
         "name": "draft",
         "type": "boolean",
         "required": false,
-        "help": "仅保存草稿（雪球本身就只能保存草稿，此参数效果相同）"
+        "help": "仅保存为草稿，不正式发布"
       },
       {
         "name": "execute",
@@ -42798,6 +43209,32 @@
     "modulePath": "xueqiu/earnings-date.js",
     "sourceFile": "xueqiu/earnings-date.js",
     "navigateBefore": "https://xueqiu.com"
+  },
+  {
+    "site": "xueqiu",
+    "name": "events",
+    "description": "列举雪球热门原创活动/事件，或用 --id 校验某事件是否可参与。供 `xueqiu article --original-event-id` 取合法值。",
+    "access": "read",
+    "domain": "mp.xueqiu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "id",
+        "type": "str",
+        "required": false,
+        "help": "校验某个事件 id 是否可用（返回 tag/disabled）；不传则列举热门事件"
+      }
+    ],
+    "columns": [
+      "id",
+      "tag",
+      "disabled"
+    ],
+    "type": "js",
+    "modulePath": "xueqiu/events.js",
+    "sourceFile": "xueqiu/events.js",
+    "navigateBefore": "https://mp.xueqiu.com"
   },
   {
     "site": "xueqiu",
@@ -42907,6 +43344,33 @@
     "modulePath": "xueqiu/groups.js",
     "sourceFile": "xueqiu/groups.js",
     "navigateBefore": "https://xueqiu.com"
+  },
+  {
+    "site": "xueqiu",
+    "name": "hashtags",
+    "description": "搜索/列举雪球话题（#话题#）。带 <keyword> 时按关键词搜索；不带则列出热门 + 我最近用过的话题。供在正文里嵌入话题 mention 取合法值。",
+    "access": "read",
+    "domain": "mp.xueqiu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "keyword",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "话题关键词（不含 #）；留空则返回热门 + 历史话题"
+      }
+    ],
+    "columns": [
+      "source",
+      "id",
+      "name"
+    ],
+    "type": "js",
+    "modulePath": "xueqiu/hashtags.js",
+    "sourceFile": "xueqiu/hashtags.js",
+    "navigateBefore": "https://mp.xueqiu.com"
   },
   {
     "site": "xueqiu",
@@ -43106,6 +43570,59 @@
     "modulePath": "xueqiu/stock.js",
     "sourceFile": "xueqiu/stock.js",
     "navigateBefore": "https://xueqiu.com"
+  },
+  {
+    "site": "xueqiu",
+    "name": "stocks",
+    "description": "搜索雪球个股（$股票$），返回代码 + 名称，供在正文里嵌入股票 mention 取合法值。",
+    "access": "read",
+    "domain": "mp.xueqiu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "keyword",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "股票关键词（名称/代码片段，不含 $）"
+      }
+    ],
+    "columns": [
+      "symbol",
+      "name",
+      "exchange"
+    ],
+    "type": "js",
+    "modulePath": "xueqiu/stocks.js",
+    "sourceFile": "xueqiu/stocks.js",
+    "navigateBefore": "https://mp.xueqiu.com"
+  },
+  {
+    "site": "xueqiu",
+    "name": "users",
+    "description": "搜索雪球用户（@某人），返回用户 id + 昵称，供在正文里 @用户取合法值。",
+    "access": "read",
+    "domain": "mp.xueqiu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "keyword",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "用户昵称关键词（不含 @）"
+      }
+    ],
+    "columns": [
+      "user_id",
+      "name"
+    ],
+    "type": "js",
+    "modulePath": "xueqiu/users.js",
+    "sourceFile": "xueqiu/users.js",
+    "navigateBefore": "https://mp.xueqiu.com"
   },
   {
     "site": "xueqiu",

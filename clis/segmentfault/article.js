@@ -127,11 +127,25 @@ export const segmentfaultProfile = {
         },
     },
 
-    // 页面内发布函数：获取 token → 建草稿。
-    // 思否只提供草稿接口（/gateway/draft），发布需用户在网页上手动操作。
-    // I = { title, content, draftOnly }，content 已完成图片转存（markdown）。
+    // 页面内发布函数：获取 token → 建草稿（draftOnly）或正式发布。
+    //
+    // I = { title, content, draftOnly, params }，content 已完成图片转存（markdown）。
+    // I.params = { tags:string[], cover?:string, channels?:string[] }：
+    //   - tags：标签名数组；发布（draftOnly=false）时思否强制至少 1 个，逐个用
+    //           GET /gateway/tag/{name} 解析成真实 tag id（精确匹配，找不到报错不 fallback）。
+    //   - channels：频道名数组（可空）；用 GET /gateway/channels 列举后按名解析成 id。
+    //   - cover：封面图思否图床 url（可空），由调用方先 /gateway/image 上传得到。
+    //
+    // 两条接口的出处（思否自家 Next.js bundle，已 re-fetch 核验，2026-06-27）：
+    //   - 正式发布：POST /gateway/article（Api.postArticle，导出 M.fDS）；body 组装见 Write.js
+    //     `{tags:I.value?.map(e=>e.id),title:T.value,text:Z,draft_id,...,log,...}`；成功 {data:{id}}。
+    //   - 标签解析：GET /gateway/tag/{name}（Api.queryTagInfo，导出 M.sUO），返回 {tag:{id,name,...}}。
+    //   - 频道列举：GET /gateway/channels（Api.getChannels）。
+    //   - base 前缀 /gateway 来自 Request.send `let T="/gateway"+m`，鉴权头为 Token。
     publish: async (I, PP) => {
-        // 获取 session token（发布时再取一次，与图片上传解耦，避免 token 失效）
+        const P = I.params || {};
+
+        // ── 获取 session token（发布时再取一次，与图片上传解耦，避免 token 失效）──
         const tokenRes = await fetch('https://segmentfault.com/write', { credentials: 'include' });
         const html = await tokenRes.text();
 
@@ -156,55 +170,170 @@ export const segmentfaultProfile = {
             return { ok: false, stage: 'token', status: 0, message: '获取思否 session token 失败，请确认已登录' };
         }
 
-        // 发布草稿
-        const postData = {
-            title: I.title,
-            tags: [],
-            text: I.content,
-            object_id: '',
-            type: 'article',
+        // ── 草稿分支：保持原有逻辑（已真机验证图片转存），思否 /gateway/draft 只建草稿 ──
+        if (I.draftOnly) {
+            const postData = {
+                title: I.title,
+                tags: [],
+                text: I.content,
+                object_id: '',
+                type: 'article',
+            };
+            const res = await fetch('https://segmentfault.com/gateway/draft', {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'token': token,
+                    'accept': '*/*',
+                },
+                body: JSON.stringify(postData),
+            });
+            const text = await res.text();
+            if (text === 'Unauthorized' || text.includes('禁言') || text.includes('锁定')) {
+                return { ok: false, stage: 'publish', status: res.status, message: text === 'Unauthorized' ? '未授权' : text };
+            }
+
+            let data;
+            try { data = JSON.parse(text); } catch (e) {
+                return { ok: false, stage: 'publish', status: res.status, message: '解析响应失败：' + text.slice(0, 200) };
+            }
+
+            // 数组格式响应 [1, "error"] 或 [0, data]
+            if (Array.isArray(data)) {
+                if (data[0] === 1) {
+                    return { ok: false, stage: 'publish', status: res.status, message: data[1] || '发布失败' };
+                }
+                const d = data[1];
+                if (d && d.id) {
+                    return { ok: true, draft: true, id: String(d.id), url: 'https://segmentfault.com/write?draftId=' + d.id };
+                }
+            }
+
+            if (!data || !data.id) {
+                const errorMsg = (data && (data.message || data.msg || data.error || data.errMsg)) || text.slice(0, 200);
+                return { ok: false, stage: 'publish', status: res.status, message: errorMsg };
+            }
+
+            return {
+                ok: true,
+                draft: true,
+                id: String(data.id),
+                url: 'https://segmentfault.com/write?draftId=' + data.id,
+            };
+        }
+
+        // ── 正式发布分支：POST /gateway/article ──────────────────────────────
+        const authHeaders = {
+            'Content-Type': 'application/json',
+            'token': token,
+            'accept': '*/*',
         };
-        const res = await fetch('https://segmentfault.com/gateway/draft', {
+
+        // 解析标签名 → tag id（思否发文强制至少 1 个标签；逐个精确解析，找不到报错不 fallback）
+        const tagNames = Array.isArray(P.tags) ? P.tags.map((t) => String(t).trim()).filter(Boolean) : [];
+        if (tagNames.length === 0) {
+            return { ok: false, stage: 'tags', message: '思否发文必须至少指定 1 个标签（--tags），合法标签可用 `segmentfault tags <名称>` 校验' };
+        }
+        const tagIds = [];
+        for (const name of tagNames) {
+            let tagData;
+            try {
+                const tr = await fetch('https://segmentfault.com/gateway/tag/' + encodeURIComponent(name), {
+                    credentials: 'include',
+                    headers: authHeaders,
+                });
+                const tt = await tr.text();
+                try { tagData = JSON.parse(tt); } catch (e) {
+                    return { ok: false, stage: 'tags', status: tr.status, message: '解析标签「' + name + '」响应失败：' + tt.slice(0, 200) };
+                }
+            } catch (e) {
+                return { ok: false, stage: 'tags', message: '解析标签「' + name + '」失败：' + String((e && e.message) || e) };
+            }
+            const tag = tagData && tagData.tag;
+            if (!tag || tag.id == null) {
+                return { ok: false, stage: 'tags', message: '思否上找不到标签「' + name + '」，请用 `segmentfault tags <名称>` 确认存在再发布' };
+            }
+            tagIds.push(tag.id);
+        }
+
+        // 解析频道名 → channel id（可空；按名精确匹配，找不到报错不 fallback）
+        const channelNames = Array.isArray(P.channels) ? P.channels.map((c) => String(c).trim()).filter(Boolean) : [];
+        const channelIds = [];
+        if (channelNames.length > 0) {
+            let list = [];
+            try {
+                const cr = await fetch('https://segmentfault.com/gateway/channels', {
+                    credentials: 'include',
+                    headers: authHeaders,
+                });
+                const ct = await cr.text();
+                let cd;
+                try { cd = JSON.parse(ct); } catch (e) {
+                    return { ok: false, stage: 'channels', status: cr.status, message: '解析频道列表失败：' + ct.slice(0, 200) };
+                }
+                // 频道响应外形未抓到运行时样本，做宽松取数组（直接数组 / {data} / {rows} / {channels}）
+                if (Array.isArray(cd)) list = cd;
+                else if (cd && Array.isArray(cd.data)) list = cd.data;
+                else if (cd && Array.isArray(cd.rows)) list = cd.rows;
+                else if (cd && Array.isArray(cd.channels)) list = cd.channels;
+                else list = [];
+            } catch (e) {
+                return { ok: false, stage: 'channels', message: '获取思否频道列表失败：' + String((e && e.message) || e) };
+            }
+            for (const cname of channelNames) {
+                const hit = list.find((c) => c && String(c.name || c.title || c.text) === cname);
+                if (!hit || hit.id == null) {
+                    const avail = list.map((c) => (c && (c.name || c.title || c.text)) || '').filter(Boolean).join(' / ');
+                    return { ok: false, stage: 'channels', message: '思否上找不到频道「' + cname + '」，可选：' + (avail || '（频道列表为空）') };
+                }
+                channelIds.push(hit.id);
+            }
+        }
+
+        // 组装发布 body（字段名与前端一致；不传的可选字段一律省略，禁止 fallback 默认值）
+        const articleBody = {
+            title: I.title,
+            text: I.content,
+            tags: tagIds,
+        };
+        if (channelIds.length > 0) articleBody.channel = channelIds;
+        if (P.cover) articleBody.cover = String(P.cover);
+
+        const res = await fetch('https://segmentfault.com/gateway/article', {
             method: 'POST',
             credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json',
-                'token': token,
-                'accept': '*/*',
-            },
-            body: JSON.stringify(postData),
+            headers: authHeaders,
+            body: JSON.stringify(articleBody),
         });
         const text = await res.text();
         if (text === 'Unauthorized' || text.includes('禁言') || text.includes('锁定')) {
-            return { ok: false, stage: 'publish', status: res.status, message: text === 'Unauthorized' ? '未授权' : text };
+            return { ok: false, stage: 'publish', status: res.status, message: text === 'Unauthorized' ? '未授权，请检查登录态' : text };
         }
 
         let data;
         try { data = JSON.parse(text); } catch (e) {
-            return { ok: false, stage: 'publish', status: res.status, message: '解析响应失败：' + text.slice(0, 200) };
+            return { ok: false, stage: 'publish', status: res.status, message: '解析发布响应失败：' + text.slice(0, 200) };
         }
 
-        // 数组格式响应 [1, "error"] 或 [0, data]
-        if (Array.isArray(data)) {
-            if (data[0] === 1) {
-                return { ok: false, stage: 'publish', status: res.status, message: data[1] || '发布失败' };
-            }
-            const d = data[1];
-            if (d && d.id) {
-                return { ok: true, draft: true, id: String(d.id), url: 'https://segmentfault.com/write?draftId=' + d.id };
-            }
+        // 失败响应：可能含 {isError, scene_id}（需人机验证）或各字段校验提示
+        if (data && (data.isError || data.error || data.errno || data.scene_id)) {
+            let msg = data.message || data.msg || data.error || '';
+            if (data.scene_id) msg = (msg ? msg + '；' : '') + '思否要求人机验证（geetest），无法在自动化环境完成';
+            return { ok: false, stage: 'publish', status: res.status, message: msg || ('发布失败：' + text.slice(0, 200)) };
         }
 
-        if (!data || !data.id) {
-            const errorMsg = (data && (data.message || data.msg || data.error || data.errMsg)) || text.slice(0, 200);
-            return { ok: false, stage: 'publish', status: res.status, message: errorMsg };
+        // 成功外形：{data:{id}}（前端 e.data.id → 跳 /a/<id>）
+        const articleId = data && data.data && data.data.id;
+        if (articleId == null) {
+            return { ok: false, stage: 'publish', status: res.status, message: (data && (data.message || data.msg)) || ('发布响应缺少文章 id：' + text.slice(0, 200)) };
         }
 
         return {
             ok: true,
-            draft: true,  // 思否只保存草稿，需在网页上手动发布
-            id: String(data.id),
-            url: 'https://segmentfault.com/write?draftId=' + data.id,
+            draft: false,
+            id: String(articleId),
+            url: 'https://segmentfault.com/a/' + articleId,
         };
     },
 };
@@ -213,7 +342,7 @@ cli({
     site: 'segmentfault',
     name: 'article',
     access: 'write',
-    description: '发布文章到思否（SegmentFault）。正文默认 Markdown；图片自动转存到思否图床；创建草稿后需在网页上手动发布。',
+    description: '发布文章到思否（SegmentFault）。默认正式发布，加 --draft 仅存草稿。正文默认 Markdown；外链图片自动转存到思否图床。正式发布必须指定标签（--tags），合法标签用 `segmentfault tags <名称>` 校验、频道用 `segmentfault channels` 列举。',
     domain: 'segmentfault.com',
     strategy: Strategy.COOKIE,
     browser: true,
@@ -222,7 +351,10 @@ cli({
         { name: 'text', positional: true, help: '文章正文（默认 Markdown；传 --html 则视为 HTML）' },
         { name: 'file', help: '正文文件路径（UTF-8，默认 Markdown）' },
         { name: 'html', type: 'boolean', help: '将正文视为原始 HTML 而非 Markdown' },
-        { name: 'draft', type: 'boolean', help: '仅保存草稿（思否默认行为，此参数保留兼容性）' },
+        { name: 'tags', help: '标签名，逗号分隔（正式发布必填，至少 1 个）。合法标签用 `segmentfault tags <名称>` 校验；草稿可省略。' },
+        { name: 'cover', help: '封面图思否图床 url（选填）。需先把图片上传到思否图床得到 url。' },
+        { name: 'channels', help: '频道名，逗号分隔（选填）。合法值用 `segmentfault channels` 列举。' },
+        { name: 'draft', type: 'boolean', help: '仅保存草稿，不正式发布' },
         { name: 'execute', type: 'boolean', help: '实际执行发布。不加此参数时命令拒绝写操作。' },
     ],
     columns: ['status', 'outcome', 'message', 'target_type', 'target', 'created_target', 'created_url'],
@@ -234,17 +366,32 @@ cli({
         const body = await resolvePayload(kwargs);
         const draftOnly = Boolean(kwargs.draft);
 
+        // 逗号分隔列表解析（去空白、去空项）
+        const splitList = (v) =>
+            typeof v === 'string'
+                ? v.split(',').map((s) => s.trim()).filter(Boolean)
+                : [];
+        const tags = splitList(kwargs.tags);
+        const channels = splitList(kwargs.channels);
+        const cover = typeof kwargs.cover === 'string' ? kwargs.cover.trim() : '';
+
+        // 正式发布前置校验：思否强制至少 1 个标签，缺失即报错（不 fallback）
+        if (!draftOnly && tags.length === 0) {
+            throw new CliError('INVALID_INPUT', '思否正式发布必须指定 --tags（至少 1 个标签）；合法标签用 `segmentfault tags <名称>` 校验，或加 --draft 只存草稿');
+        }
+
         const result = await publishArticle(page, {
             title,
             body,
             format: kwargs.html ? 'html' : 'markdown',
             draftOnly,
             profile: segmentfaultProfile,
+            publishParams: { tags, channels, cover },
         });
 
         const upN = result.images.uploaded.length | 0;
         const failN = result.images.failed.length | 0;
-        let message = '已保存思否草稿（需在网页上手动发布）';
+        let message = result.draft ? '已保存到思否草稿箱（需在网页上手动发布）' : '已正式发布到思否';
         if (upN || failN) {
             message += `；图片：${upN} 张转存成功${failN ? `，${failN} 张失败` : ''}`;
         }
@@ -252,8 +399,8 @@ cli({
             message,
             'article',
             '',
-            'draft',
-            { created_target: 'article:' + result.id, created_url: result.url },
+            result.draft ? 'draft' : 'created',
+            { created_target: (result.draft ? 'draft:' : 'article:') + result.id, created_url: result.url },
         );
     },
 });

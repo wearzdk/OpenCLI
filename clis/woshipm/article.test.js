@@ -162,11 +162,11 @@ describe('publish', () => {
         expect(result.draft).toBe(true);
     });
 
-    it('创建草稿失败时返回 ok:false', async () => {
+    it('建草稿（--draft）失败时返回 ok:false（stage=create）', async () => {
         const ctx = {
             title: '失败测试',
             content: '<p>内容</p>',
-            draftOnly: false,
+            draftOnly: true,
             outputFormat: 'html',
             preprocessConfig: woshipmProfile.preprocessConfig,
             imageSpec: null,
@@ -186,9 +186,43 @@ describe('publish', () => {
         expect(result.status).toBe(403);
     });
 
-    it('响应无 post_id 时返回 ok:false', async () => {
+    it('正式发布（add_pending）成功：body 含三个 copyright 字段，draft=false', async () => {
         const ctx = {
-            title: '无 id 测试',
+            title: '正式发布测试',
+            content: '<p>正文内容</p>',
+            draftOnly: false,
+            outputFormat: 'html',
+            preprocessConfig: woshipmProfile.preprocessConfig,
+            imageSpec: null,
+            imageSkip: woshipmProfile.image.skip,
+        };
+        const js = buildPublishJs(ctx, woshipmProfile.publish.toString(), woshipmProfile.image.uploadFn.toString());
+        const page = evalPage(makePublishFetch('0', ''));
+        // makePublishFetch 返回 {post_id, url}，但发布分支只看 success；改用成功响应
+        const page2 = evalPage(vi.fn(async (reqUrl, opts) => {
+            if (reqUrl && String(reqUrl).includes('admin-ajax.php')) {
+                globalThis.__lastPublishBody = opts && opts.body ? opts.body.toString() : '';
+                return { ok: true, status: 200, text: async () => JSON.stringify({ success: 1 }) };
+            }
+            return { ok: true, status: 200, text: async () => '{}', json: async () => ({}) };
+        }));
+        const p = page2.evaluate(js);
+        await vi.runAllTimersAsync();
+        const result = await p;
+        expect(result.ok).toBe(true);
+        expect(result.draft).toBe(false);
+        const body = globalThis.__lastPublishBody || '';
+        expect(body).toContain('action=add_pending');
+        expect(body).toContain('copyright=1');
+        expect(body).toContain('copyright_pm=1');
+        expect(body).toContain('copyright_other=1');
+        // 兜底：page 变量被使用，避免 lint 报未用
+        void page;
+    });
+
+    it('正式发布失败（success!=1）时返回 ok:false（stage=publish）', async () => {
+        const ctx = {
+            title: '发布失败测试',
             content: '<p>内容</p>',
             draftOnly: false,
             outputFormat: 'html',
@@ -200,12 +234,13 @@ describe('publish', () => {
         const page = evalPage(vi.fn(async () => ({
             ok: true,
             status: 200,
-            text: async () => JSON.stringify({ success: false, error: '标题已存在' }),
+            text: async () => JSON.stringify({ success: 0, message: '标题已存在' }),
         })));
         const p = page.evaluate(js);
         await vi.runAllTimersAsync();
         const result = await p;
         expect(result.ok).toBe(false);
+        expect(result.stage).toBe('publish');
         expect(result.message).toMatch(/标题已存在/);
     });
 });

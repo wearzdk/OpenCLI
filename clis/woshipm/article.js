@@ -146,45 +146,99 @@ export const woshipmProfile = {
         return { isAuthenticated: false, error: '接口返回未登录（CODE: ' + (profileData && profileData.CODE) + '）' };
     },
 
-    // 页面内发布函数——移植自 Wechatsync publish()
+    // 页面内发布函数——移植自 Wechatsync publish() + 平台 all.bundle.js post-pending 处理器
     // I = { title, content, draftOnly }，content 已完成预处理 + 图片转存
+    //
+    // 两条分支（同一 admin-ajax.php，仅 action 不同）：
+    //   draftOnly=true  → action=add_draft  保存草稿（沿用现有逻辑，已真机验证图片转存）
+    //   draftOnly=false → action=add_pending 提交审核（= 正式发布）。
+    // 出处：平台 https://image.woshipm.com/fp/js/all.bundle.js?ver=6.0.12 的
+    //   `[data-action="post-pending"]` 点击处理器原文：
+    //   `n=s(".fa-editor-form").serialize()+"&action=add_pending&post_content="+encodeURIComponent(e)`
+    //   且前置校验三个 copyright checkbox 必须全勾（copyright/copyright_pm/copyright_other），
+    //   成功判定 `1==e.success`，失败弹 e.message。
+    // 由于我们直接构造请求（不能 form.serialize），三个协议字段须显式以 value=1 带上。
     publish: async (I, _PP) => {
         const content = I.content;
+        const AJAX_URL = 'https://www.woshipm.com/wp-admin/admin-ajax.php';
+        const COMMON_HEADERS = {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest',
+        };
 
-        // 创建草稿
-        const createResp = await fetch('https://www.woshipm.com/wp-admin/admin-ajax.php', {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-Requested-With': 'XMLHttpRequest',
-            },
-            body: new URLSearchParams({
-                action: 'add_draft',
-                post_title: I.title,
-                post_content: content,
-            }),
+        // ── 草稿：add_draft ─────────────────────────────────────────────────
+        if (I.draftOnly) {
+            const createResp = await fetch(AJAX_URL, {
+                method: 'POST',
+                credentials: 'include',
+                headers: COMMON_HEADERS,
+                body: new URLSearchParams({
+                    action: 'add_draft',
+                    post_title: I.title,
+                    post_content: content,
+                }),
+            });
+
+            const respText = await createResp.text();
+            let createData = null;
+            try { createData = JSON.parse(respText); } catch (e) {}
+
+            if (!createResp.ok || !createData || !createData.post_id) {
+                return {
+                    ok: false,
+                    stage: 'create',
+                    status: createResp.status,
+                    message: (createData && createData.error) || respText.slice(0, 300),
+                };
+            }
+
+            const draftId = String(createData.post_id);
+            const draftUrl = createData.url || ('https://www.woshipm.com/writing?pid=' + draftId);
+            return { ok: true, draft: true, id: draftId, url: draftUrl };
+        }
+
+        // ── 正式发布：add_pending（提交审核）────────────────────────────────
+        // 三个 copyright 字段为协议勾选（checkbox value=1），缺一后端会拒。
+        const pubBody = new URLSearchParams({
+            action: 'add_pending',
+            post_title: I.title,
+            post_content: content,
+            copyright: '1',
+            copyright_pm: '1',
+            copyright_other: '1',
         });
 
-        const respText = await createResp.text();
-        let createData = null;
-        try { createData = JSON.parse(respText); } catch (e) {}
+        const pubResp = await fetch(AJAX_URL, {
+            method: 'POST',
+            credentials: 'include',
+            headers: COMMON_HEADERS,
+            body: pubBody,
+        });
 
-        if (!createResp.ok || !createData || !createData.post_id) {
+        const pubText = await pubResp.text();
+        let pubData = null;
+        try { pubData = JSON.parse(pubText); } catch (e) {}
+
+        // 成功判定：源码为 `1==e.success`（宽松等值，1 或 "1" 均可）
+        if (!pubResp.ok || !pubData || String(pubData.success) !== '1') {
             return {
                 ok: false,
-                stage: 'create',
-                status: createResp.status,
-                message: (createData && createData.error) || respText.slice(0, 300),
+                stage: 'publish',
+                status: pubResp.status,
+                message: (pubData && pubData.message) || pubText.slice(0, 300),
             };
         }
 
-        const draftId = String(createData.post_id);
-        const draftUrl = createData.url || ('https://www.woshipm.com/writing?pid=' + draftId);
-
-        // 人人都是产品经理草稿创建即完成（平台不区分「草稿」和「发布」两步，发布在管理后台手动操作）
-        // draftOnly 无论 true/false 均返回草稿链接，草稿创建成功即视为完成
-        return { ok: true, draft: true, id: draftId, url: draftUrl };
+        // add_pending 成功响应不含 post_id / url（前端仅弹「作品提交成功」浮层，
+        // 引导跳转 /me/posts/）。稿件进入【待审核 pending】，由运营 24h 内人工审核。
+        const pid = (pubData && (pubData.post_id || pubData.id)) ? String(pubData.post_id || pubData.id) : '';
+        return {
+            ok: true,
+            draft: false,
+            pending: true,
+            id: pid,
+            url: 'https://www.woshipm.com/me/posts/',
+        };
     },
 };
 
@@ -194,17 +248,17 @@ cli({
     site: 'woshipm',
     name: 'article',
     access: 'write',
-    description: '发布文章到人人都是产品经理（woshipm.com）。正文默认 Markdown，图片自动转存到站内图床。',
+    description: '发布文章到人人都是产品经理（woshipm.com）。默认提交审核（正式发布），加 --draft 仅存草稿。正文默认 Markdown，图片自动转存到站内图床。注意：平台为审核制，提交后稿件进入待审核（pending），运营 24h 内人工审核通过才公开。',
     domain: 'www.woshipm.com',
     strategy: Strategy.COOKIE,
     browser: true,
     args: [
-        { name: 'title', positional: true, required: true, help: '文章标题' },
+        { name: 'title', positional: true, required: true, help: '文章标题（非空，长度<=200）' },
         { name: 'text', positional: true, help: '文章正文（默认 Markdown；传 --html 则视为 HTML）' },
         { name: 'file', help: '正文文件路径（UTF-8，默认 Markdown）' },
         { name: 'html', type: 'boolean', help: '把正文当 HTML 而非 Markdown 处理' },
-        { name: 'draft', type: 'boolean', help: '仅保存草稿，不发布（woshipm 目前仅支持草稿模式）' },
-        { name: 'execute', type: 'boolean', help: '确认执行写操作。未传则拒绝写入。' },
+        { name: 'draft', type: 'boolean', help: '仅保存草稿，不提交审核' },
+        { name: 'execute', type: 'boolean', help: '确认执行写操作。未传则拒绝写入。提交审核不可轻易撤回，请确认后再加此参数。' },
     ],
     columns: ['status', 'outcome', 'message', 'target_type', 'target', 'created_target', 'created_url'],
     func: async (page, kwargs) => {
@@ -212,6 +266,8 @@ cli({
         requireExecute(kwargs);
         const title = String(kwargs.title ?? '').trim();
         if (!title) throw new CliError('INVALID_INPUT', '文章标题不能为空');
+        // 平台 JS 前端校验：标题长度 <=200，否则报「文章内容为空或者标题过长。」
+        if (title.length > 200) throw new CliError('INVALID_INPUT', '文章标题过长（最多 200 字），当前 ' + title.length + ' 字');
         const body = await resolvePayload(kwargs);
         const draftOnly = Boolean(kwargs.draft);
 
@@ -225,7 +281,9 @@ cli({
 
         const upN = result.images.uploaded.length | 0;
         const failN = result.images.failed.length | 0;
-        let message = '已创建草稿';
+        let message = result.draft
+            ? '已保存到草稿箱'
+            : '已提交审核（稿件进入待审核 pending，运营 24h 内人工审核通过后才公开）';
         if (upN || failN) {
             message += `（图片：${upN} 张已转存${failN ? `，${failN} 张失败` : ''}）`;
         }
@@ -233,8 +291,11 @@ cli({
             message,
             'article',
             '',
-            'draft',
-            { created_target: 'article:' + result.id, created_url: result.url },
+            result.draft ? 'draft' : 'pending',
+            {
+                created_target: (result.draft ? 'draft:' : 'article:') + (result.id || ''),
+                created_url: result.url,
+            },
         );
     },
 });

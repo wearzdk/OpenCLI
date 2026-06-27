@@ -80,18 +80,18 @@ describe('bilibiliArticleProfile 基本属性', () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('profile.publish — 草稿保存成功路径', () => {
+describe('profile.publish — 草稿保存成功路径（draftOnly=true）', () => {
     beforeEach(() => { vi.useFakeTimers(); });
     afterEach(() => { vi.useRealTimers(); });
 
-    it('草稿保存成功，返回 ok:true、draft:true 以及 url', async () => {
+    it('仅建草稿成功，返回 ok:true、draft:true 以及草稿编辑 URL', async () => {
         const mockFetch = vi.fn().mockResolvedValue({
             ok: true,
             status: 200,
             text: async () => JSON.stringify({ code: 0, data: { aid: 12345 } }),
         });
 
-        const I = { title: '测试标题', content: '<p>正文</p>', draftOnly: false };
+        const I = { title: '测试标题', content: '<p>正文</p>', draftOnly: true };
 
         const result = await runInPage(
             (PP) => bilibiliArticleProfile.publish(I, PP),
@@ -104,9 +104,12 @@ describe('profile.publish — 草稿保存成功路径', () => {
         expect(result.id).toBe('12345');
         expect(result.url).toContain('aid=12345');
         expect(result.url).toContain('member.bilibili.com');
+        // draftOnly 只发一次草稿请求，不应调 submit
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        expect(mockFetch.mock.calls[0][0]).toContain('draft/addupdate');
     });
 
-    it('发出的请求携带正确的表单字段', async () => {
+    it('草稿请求携带正确的表单字段', async () => {
         let capturedBody = null;
         const mockFetch = vi.fn().mockImplementation(async (url, opts) => {
             capturedBody = opts?.body;
@@ -136,6 +139,102 @@ describe('profile.publish — 草稿保存成功路径', () => {
         expect(bodyStr).toContain('title=');
         expect(bodyStr).toContain('csrf=csrf123');
         expect(bodyStr).toContain('tid=4');
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('profile.publish — 正式发布路径（draftOnly=false）', () => {
+    // 模拟三段请求：① 草稿 addupdate ② 校验用 categories ③ submit
+    function makePublishFetch(submitResp) {
+        return vi.fn().mockImplementation(async (url) => {
+            if (String(url).includes('draft/addupdate')) {
+                return { ok: true, status: 200, text: async () => JSON.stringify({ code: 0, data: { aid: 777 } }) };
+            }
+            if (String(url).includes('/x/article/categories')) {
+                // 一级「科技」下含叶子「数码」(id=4)
+                return { ok: true, status: 200, json: async () => ({ code: 0, data: [
+                    { id: 1, name: '科技', parent_id: 0, children: [
+                        { id: 4, name: '数码', parent_id: 1, children: [] },
+                    ] },
+                ] }) };
+            }
+            if (String(url).includes('article/submit')) {
+                return submitResp;
+            }
+            throw new Error('未预期的请求 URL: ' + url);
+        });
+    }
+
+    it('草稿→校验分类→submit 成功，返回 draft:false 和 read/cv URL', async () => {
+        const mockFetch = makePublishFetch({
+            ok: true, status: 200, text: async () => JSON.stringify({ code: 0, data: { aid: 777 } }),
+        });
+        const I = { title: '正式发布标题', content: '<p>正文</p>', draftOnly: false, params: { category: '4', tid: '4' } };
+
+        const result = await runInPage(
+            (PP) => bilibiliArticleProfile.publish(I, PP),
+            mockFetch,
+            'bili_jct=tok; SESSDATA=abc',
+        );
+
+        expect(result.ok).toBe(true);
+        expect(result.draft).toBe(false);
+        expect(result.id).toBe('777');
+        expect(result.url).toBe('https://www.bilibili.com/read/cv777');
+        // 应依次命中 addupdate / categories / submit
+        const urls = mockFetch.mock.calls.map((c) => String(c[0]));
+        expect(urls.some((u) => u.includes('draft/addupdate'))).toBe(true);
+        expect(urls.some((u) => u.includes('/x/article/categories'))).toBe(true);
+        expect(urls.some((u) => u.includes('article/submit'))).toBe(true);
+    });
+
+    it('缺少 category 时不发 submit，返回分类报错（草稿仍已存）', async () => {
+        const mockFetch = makePublishFetch(null);
+        const I = { title: '标题', content: '<p>x</p>', draftOnly: false, params: {} };
+
+        const result = await runInPage(
+            (PP) => bilibiliArticleProfile.publish(I, PP),
+            mockFetch,
+            'bili_jct=tok',
+        );
+
+        expect(result.ok).toBe(false);
+        expect(result.stage).toBe('category');
+        expect(result.message).toContain('category');
+        // 不应调 submit
+        expect(mockFetch.mock.calls.some((c) => String(c[0]).includes('article/submit'))).toBe(false);
+    });
+
+    it('传入不存在的 category id 时报错（草稿仍已存）', async () => {
+        const mockFetch = makePublishFetch(null);
+        const I = { title: '标题', content: '<p>x</p>', draftOnly: false, params: { category: '999' } };
+
+        const result = await runInPage(
+            (PP) => bilibiliArticleProfile.publish(I, PP),
+            mockFetch,
+            'bili_jct=tok',
+        );
+
+        expect(result.ok).toBe(false);
+        expect(result.stage).toBe('category');
+        expect(result.message).toContain('999');
+    });
+
+    it('submit 返回 HTTP 412 时识别为风控拦截', async () => {
+        const mockFetch = makePublishFetch({ ok: false, status: 412, text: async () => 'blocked' });
+        const I = { title: '标题', content: '<p>x</p>', draftOnly: false, params: { category: '4' } };
+
+        const result = await runInPage(
+            (PP) => bilibiliArticleProfile.publish(I, PP),
+            mockFetch,
+            'bili_jct=tok',
+        );
+
+        expect(result.ok).toBe(false);
+        expect(result.stage).toBe('submit');
+        expect(result.status).toBe(412);
+        expect(result.message).toMatch(/风控/);
     });
 });
 

@@ -173,6 +173,9 @@ describe('publish（页面内 evaluate）', () => {
             preprocessConfig: sohuProfile.preprocessConfig,
             imageSpec: null,
             imageSkip: sohuProfile.image.skip,
+            // 新增正式发布分支后，channelId 对草稿/发布都必填（由 Node 侧 func 解析后注入）。
+            // 单测直接调 buildPublishJs，须手动给一个合法 channelId。
+            publishParams: { channelId: 24 },
             ...overrides,
         };
     }
@@ -379,6 +382,7 @@ describe('uploadFn（页面内执行图片转存）', () => {
             preprocessConfig: sohuProfile.preprocessConfig,
             imageSpec: null,
             imageSkip: sohuProfile.image.skip,
+            publishParams: { channelId: 24 },
         };
         const js = buildPublishJs(ctx, sohuProfile.publish.toString(), sohuProfile.image.uploadFn.toString());
         const page = makePage(fetchMock);
