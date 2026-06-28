@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { COMMAND_RESULT_UNKNOWN_CODE, COMMAND_RESULT_UNKNOWN_HINT } from '../daemon-utils.js';
 import {
   BrowserCommandError,
   fetchDaemonStatus,
@@ -8,6 +7,7 @@ import {
   requestDaemonShutdown,
   sendCommand,
 } from './daemon-client.js';
+import * as daemonLifecycle from './daemon-lifecycle.js';
 
 describe('daemon-client', () => {
   beforeEach(() => {
@@ -150,6 +150,28 @@ describe('daemon-client', () => {
     expect(vi.mocked(fetch).mock.calls[0][0]).toMatch(/\/status\?contextId=work$/);
   });
 
+  it('rejects OPENCLI_DAEMON_PORT so CLI and extension cannot split bridge ports', async () => {
+    vi.resetModules();
+    vi.stubEnv('OPENCLI_DAEMON_PORT', '19999');
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        ok: true,
+        pid: 1,
+        uptime: 0,
+        extensionConnected: true,
+        pending: 0,
+        memoryMB: 1,
+        port: 19825,
+      }),
+    } as Response);
+
+    const freshClient = await import('./daemon-client.js');
+    await expect(freshClient.fetchDaemonStatus()).rejects.toThrow('OPENCLI_DAEMON_PORT is no longer supported');
+
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+  });
+
   it('sendCommand includes the current pid in generated command ids', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(1_763_000_000_000);
     vi.mocked(fetch).mockResolvedValue({
@@ -223,31 +245,6 @@ describe('daemon-client', () => {
     expect(ids[0]).not.toBe(ids[1]);
   });
 
-  it('sendCommand surfaces a profile_required 409 immediately instead of retrying', async () => {
-    const fetchMock = vi.mocked(fetch);
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 409,
-      json: () => Promise.resolve({
-        id: 'server',
-        ok: false,
-        errorCode: 'profile_required',
-        error: 'Multiple Browser Bridge profiles are connected; choose one with --profile.',
-        errorHint: 'Run opencli profile list, then use opencli --profile <name> ...',
-      }),
-    } as Response);
-
-    // The profile_required 409 is not a duplicate-id collision: it must throw
-    // the actionable error on the first attempt, not loop until "max retries
-    // exhausted".
-    await expect(sendCommand('exec', { code: '1 + 1' })).rejects.toMatchObject({
-      name: 'BrowserCommandError',
-      code: 'profile_required',
-      hint: 'Run opencli profile list, then use opencli --profile <name> ...',
-    } satisfies Partial<BrowserCommandError>);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
   it('sendCommand does not retry command_result_unknown even when the message looks transient', async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockResolvedValue({
@@ -270,23 +267,64 @@ describe('daemon-client', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('sendCommand does not silently retry a mutating command on fetch AbortError', async () => {
+  it('sendCommand runs full bridge ensure on a pre-dispatch failure, then resends with a fresh id', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_763_000_000_321);
+    const ensureSpy = vi.spyOn(daemonLifecycle, 'ensureBrowserBridgeReady').mockResolvedValue({
+      health: {
+        state: 'ready',
+        status: {
+          ok: true,
+          pid: 1,
+          uptime: 1,
+          extensionConnected: true,
+          pending: 0,
+          memoryMB: 0,
+          port: 19825,
+        },
+      },
+      spawnedProcess: null,
+    });
     const fetchMock = vi.mocked(fetch);
-    fetchMock.mockRejectedValue(
-      Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }),
-    );
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        json: () => Promise.resolve({
+          ok: false,
+          errorCode: 'extension_not_connected',
+          error: 'Extension not connected.',
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ id: 'server', ok: true, data: 7 }),
+      } as Response);
 
-    await expect(sendCommand('exec', { code: 'window.__mutate = true' })).rejects.toMatchObject({
-      name: 'BrowserCommandError',
-      code: COMMAND_RESULT_UNKNOWN_CODE,
-      hint: COMMAND_RESULT_UNKNOWN_HINT,
-    } satisfies Partial<BrowserCommandError>);
-    // No second dispatch — the command must not be re-POSTed with a fresh id.
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await expect(sendCommand('exec', { code: '1 + 6', contextId: 'work' })).resolves.toBe(7);
+
+    expect(ensureSpy).toHaveBeenCalledWith(expect.objectContaining({ contextId: 'work', verbose: false }));
+    const ids = fetchMock.mock.calls.map(([, init]) => (JSON.parse(String(init?.body)) as { id: string }).id);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).not.toBe(ids[1]);
   });
 
-  it('sendCommand still retries on TypeError (connection refused) since the command never reached the daemon', async () => {
-    vi.spyOn(Date, 'now').mockReturnValue(1_763_000_000_456);
+  it('sendCommand runs full bridge ensure on a local TypeError before resending', async () => {
+    const ensureSpy = vi.spyOn(daemonLifecycle, 'ensureBrowserBridgeReady').mockResolvedValue({
+      health: {
+        state: 'ready',
+        status: {
+          ok: true,
+          pid: 1,
+          uptime: 1,
+          extensionConnected: true,
+          pending: 0,
+          memoryMB: 0,
+          port: 19825,
+        },
+      },
+      spawnedProcess: null,
+    });
     const fetchMock = vi.mocked(fetch);
     fetchMock
       .mockRejectedValueOnce(new TypeError('fetch failed'))
@@ -296,13 +334,47 @@ describe('daemon-client', () => {
         json: () => Promise.resolve({ id: 'server', ok: true, data: 'ok' }),
       } as Response);
 
-    await expect(sendCommand('exec', { code: '1 + 1' })).resolves.toBe('ok');
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await expect(sendCommand('exec', { code: 'document.title' })).resolves.toBe('ok');
 
-    const ids = fetchMock.mock.calls.map(([, init]) => {
-      const body = JSON.parse(String(init?.body)) as { id: string };
-      return body.id;
-    });
-    expect(ids[0]).not.toBe(ids[1]);
+    expect(ensureSpy).toHaveBeenCalledWith(expect.objectContaining({ verbose: false }));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('sendCommand does NOT wait when the bridge reports profile_required', async () => {
+    const ensureSpy = vi.spyOn(daemonLifecycle, 'ensureBrowserBridgeReady');
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 409,
+      json: () => Promise.resolve({
+        ok: false,
+        errorCode: 'profile_required',
+        error: 'Multiple Browser Bridge profiles are connected; choose one with --profile.',
+        errorHint: 'Run opencli profile list, then opencli profile use <name>.',
+      }),
+    } as Response);
+
+    await expect(sendCommand('exec', { code: '1' })).rejects.toMatchObject({
+      name: 'BrowserCommandError',
+      code: 'profile_required',
+    } satisfies Partial<BrowserCommandError>);
+
+    expect(ensureSpy).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('sendCommand surfaces an AbortError as command_result_unknown without ensure or resend', async () => {
+    const ensureSpy = vi.spyOn(daemonLifecycle, 'ensureBrowserBridgeReady');
+    const abortErr = new Error('The operation was aborted');
+    abortErr.name = 'AbortError';
+    vi.mocked(fetch).mockRejectedValueOnce(abortErr);
+
+    await expect(sendCommand('exec', { code: 'window.__mutate = true' })).rejects.toMatchObject({
+      name: 'BrowserCommandError',
+      code: 'command_result_unknown',
+    } satisfies Partial<BrowserCommandError>);
+
+    expect(ensureSpy).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

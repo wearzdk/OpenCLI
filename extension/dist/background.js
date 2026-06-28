@@ -2,8 +2,6 @@ const DAEMON_PORT = 19825;
 const DAEMON_HOST = "localhost";
 const DAEMON_WS_URL = `ws://${DAEMON_HOST}:${DAEMON_PORT}/ext`;
 const DAEMON_PING_URL = `http://${DAEMON_HOST}:${DAEMON_PORT}/ping`;
-const WS_RECONNECT_BASE_DELAY = 2e3;
-const WS_RECONNECT_MAX_DELAY = 5e3;
 
 const attached = /* @__PURE__ */ new Set();
 const tabFrameContexts = /* @__PURE__ */ new Map();
@@ -649,7 +647,6 @@ async function refreshMappings() {
 
 let ws = null;
 let reconnectTimer = null;
-let reconnectAttempts = 0;
 const CONTEXT_ID_KEY = "opencli_context_id_v1";
 let currentContextId = "default";
 let contextIdPromise = null;
@@ -741,8 +738,13 @@ async function connectAttempt() {
   if (isDaemonSocketActive()) return;
   try {
     const res = await fetch(DAEMON_PING_URL, { signal: AbortSignal.timeout(1e3) });
-    if (!res.ok) return;
+    if (!res.ok) {
+      scheduleReconnect();
+      return;
+    }
+    notifyDaemonReachable();
   } catch {
+    scheduleReconnect();
     return;
   }
   if (isDaemonSocketActive()) return;
@@ -760,11 +762,12 @@ async function connectAttempt() {
   thisWs.onopen = () => {
     if (ws !== thisWs) return;
     console.log("[opencli] Connected to daemon");
-    reconnectAttempts = 0;
+    reconnectPhaseStartedAt = 0;
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
+    reconnectTimerDelayMs = null;
     safeSend(thisWs, {
       type: "hello",
       contextId: currentContextId,
@@ -793,16 +796,38 @@ async function connectAttempt() {
     thisWs.close();
   };
 }
-const MAX_EAGER_ATTEMPTS = 6;
-function scheduleReconnect() {
-  if (reconnectTimer) return;
-  reconnectAttempts++;
-  if (reconnectAttempts > MAX_EAGER_ATTEMPTS) return;
-  const delay = Math.min(WS_RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttempts - 1), WS_RECONNECT_MAX_DELAY);
+const RECONNECT_FAST_INTERVAL_MS = 3e3;
+const RECONNECT_FAST_WINDOW_MS = 3e4;
+const RECONNECT_SLOW_INTERVAL_MS = 15e3;
+let reconnectPhaseStartedAt = 0;
+let reconnectTimerDelayMs = null;
+function nextReconnectDelayMs() {
+  const sinceLoss = Date.now() - reconnectPhaseStartedAt;
+  return sinceLoss < RECONNECT_FAST_WINDOW_MS ? RECONNECT_FAST_INTERVAL_MS : RECONNECT_SLOW_INTERVAL_MS;
+}
+function scheduleReconnect(opts = {}) {
+  if (reconnectTimer) {
+    if (!opts.replaceExisting) return;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    reconnectTimerDelayMs = null;
+  }
+  if (reconnectPhaseStartedAt === 0) {
+    reconnectPhaseStartedAt = Date.now();
+  }
+  const delay = nextReconnectDelayMs();
+  reconnectTimerDelayMs = delay;
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
+    reconnectTimerDelayMs = null;
     void connect();
   }, delay);
+}
+function notifyDaemonReachable() {
+  reconnectPhaseStartedAt = Date.now();
+  if (reconnectTimer && reconnectTimerDelayMs !== RECONNECT_FAST_INTERVAL_MS) {
+    scheduleReconnect({ replaceExisting: true });
+  }
 }
 const automationSessions = /* @__PURE__ */ new Map();
 const IDLE_TIMEOUT_DEFAULT = 3e4;
@@ -1432,7 +1457,7 @@ let initialized = false;
 function initialize() {
   if (initialized) return;
   initialized = true;
-  chrome.alarms.create("keepalive", { periodInMinutes: 0.4 });
+  chrome.alarms.create("keepalive", { periodInMinutes: 0.5 });
   registerListeners();
   try {
     const registerFrameTracking$1 = registerFrameTracking;
