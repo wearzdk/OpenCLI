@@ -3181,6 +3181,46 @@
   },
   {
     "site": "baijiahao",
+    "name": "publish",
+    "description": "发布视频到百家号（一条命令完成上传+填写+发布；可选定时）",
+    "access": "write",
+    "domain": "baijiahao.baidu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "video",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "视频文件路径"
+      },
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "help": "视频标题（不足 8 字会自动补「你不知道的」，截断到 30 字）"
+      },
+      {
+        "name": "schedule",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "定时发布时间（ISO8601 或 Unix 秒；不填即立即发布）"
+      }
+    ],
+    "columns": [
+      "status",
+      "title",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "baijiahao/publish.js",
+    "sourceFile": "baijiahao/publish.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "baijiahao",
     "name": "whoami",
     "description": "检测百家号当前登录状态，返回账号信息。",
     "access": "read",
@@ -3765,6 +3805,37 @@
   },
   {
     "site": "bilibili",
+    "name": "biliup-login",
+    "description": "B站 biliup 扫码登录，生成投稿用 cookie（一次性）",
+    "access": "write",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "account",
+        "type": "str",
+        "default": "default",
+        "required": false,
+        "help": "biliup 账号名（cookie 存 ~/.publishport/bilibili/<account>.json）"
+      },
+      {
+        "name": "cookie",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "直接指定 cookie 输出路径（覆盖 --account）"
+      }
+    ],
+    "columns": [
+      "status",
+      "cookie"
+    ],
+    "type": "js",
+    "modulePath": "bilibili/publish.js",
+    "sourceFile": "bilibili/publish.js"
+  },
+  {
+    "site": "bilibili",
     "name": "categories",
     "description": "列出 B站专栏文章分类树（id + 名称 + 父分类），供 `bilibili article --category` 取合法分类 id。优先选叶子分类（is_leaf=true）。",
     "access": "read",
@@ -4343,6 +4414,81 @@
   },
   {
     "site": "bilibili",
+    "name": "publish",
+    "aliases": [
+      "upload-video"
+    ],
+    "description": "投稿视频到B站（经官方 biliup；一条命令完成；需先 biliup-login）",
+    "access": "write",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "video",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "视频文件路径"
+      },
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "help": "稿件标题"
+      },
+      {
+        "name": "desc",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "稿件简介"
+      },
+      {
+        "name": "tid",
+        "type": "str",
+        "required": true,
+        "help": "分区 ID（B站 category id，如体育-足球=...）"
+      },
+      {
+        "name": "tags",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "标签，逗号分隔（tag1,tag2）"
+      },
+      {
+        "name": "schedule",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "定时发布时间（ISO8601 或 Unix 秒；不填即立即）"
+      },
+      {
+        "name": "account",
+        "type": "str",
+        "default": "default",
+        "required": false,
+        "help": "biliup 账号名（cookie 存 ~/.publishport/bilibili/<account>.json）"
+      },
+      {
+        "name": "cookie",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "直接指定 biliup cookie 文件路径（覆盖 --account）"
+      }
+    ],
+    "columns": [
+      "status",
+      "title",
+      "tid"
+    ],
+    "type": "js",
+    "modulePath": "bilibili/publish.js",
+    "sourceFile": "bilibili/publish.js"
+  },
+  {
+    "site": "bilibili",
     "name": "ranking",
     "description": "Get Bilibili video ranking board",
     "access": "read",
@@ -4512,6 +4658,100 @@
     "type": "js",
     "modulePath": "bilibili/unfollow.js",
     "sourceFile": "bilibili/unfollow.js",
+    "navigateBefore": "https://www.bilibili.com"
+  },
+  {
+    "site": "bilibili",
+    "name": "upload",
+    "description": "投稿视频到 B站（复用客户端的浏览器登录态，底层用 biliup）。默认仅 dry-run 校验，加 --execute 才真正上传。",
+    "access": "write",
+    "domain": "www.bilibili.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "file",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "视频文件路径（多P 用 --more 追加）"
+      },
+      {
+        "name": "title",
+        "type": "str",
+        "required": false,
+        "help": "稿件标题（默认取文件名）"
+      },
+      {
+        "name": "tag",
+        "type": "str",
+        "required": true,
+        "help": "标签，逗号分隔（B站要求至少 1 个）"
+      },
+      {
+        "name": "tid",
+        "type": "number",
+        "required": false,
+        "help": "分区 id（如 201 科学科普；不传用 biliup 默认）"
+      },
+      {
+        "name": "desc",
+        "type": "str",
+        "required": false,
+        "help": "简介"
+      },
+      {
+        "name": "cover",
+        "type": "str",
+        "required": false,
+        "help": "封面图片路径（不传由 B站自动截取）"
+      },
+      {
+        "name": "copyright",
+        "type": "number",
+        "required": false,
+        "help": "1=自制 2=转载（默认 1）"
+      },
+      {
+        "name": "source",
+        "type": "str",
+        "required": false,
+        "help": "转载来源 URL（copyright=2 时建议填）"
+      },
+      {
+        "name": "line",
+        "type": "str",
+        "required": false,
+        "help": "上传线路：bda2/ws/qn/bldsa/tx/txa/bda/alia（不传自动选）"
+      },
+      {
+        "name": "dtime",
+        "type": "number",
+        "required": false,
+        "help": "定时发布的 10 位 unix 时间戳"
+      },
+      {
+        "name": "more",
+        "type": "str",
+        "required": false,
+        "help": "追加的视频文件（多P），逗号分隔多个路径"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "真正投稿；不带则只做 dry-run 校验"
+      }
+    ],
+    "columns": [
+      "status",
+      "title",
+      "files",
+      "output"
+    ],
+    "type": "js",
+    "modulePath": "bilibili/upload.js",
+    "sourceFile": "bilibili/upload.js",
     "navigateBefore": "https://www.bilibili.com"
   },
   {
@@ -15346,6 +15586,103 @@
     "navigateBefore": false
   },
   {
+    "site": "ghost",
+    "name": "publish",
+    "description": "Publish a post to a Ghost site via the Admin API. A Markdown body is converted to HTML automatically (sent with ?source=html). Defaults to a draft for safety — pass --status published to go live.",
+    "access": "write",
+    "domain": "ghost.org",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "help": "Post title"
+      },
+      {
+        "name": "content",
+        "type": "str",
+        "required": false,
+        "help": "Post body (Markdown or HTML). Or use --file."
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "Read the post body from a local file instead of --content"
+      },
+      {
+        "name": "markup",
+        "type": "str",
+        "default": "auto",
+        "required": false,
+        "help": "How to interpret the body: auto-detect (default), markdown, or html",
+        "choices": [
+          "auto",
+          "markdown",
+          "html"
+        ]
+      },
+      {
+        "name": "status",
+        "type": "str",
+        "default": "draft",
+        "required": false,
+        "help": "Post status (default: draft)",
+        "choices": [
+          "draft",
+          "published"
+        ]
+      },
+      {
+        "name": "excerpt",
+        "type": "str",
+        "required": false,
+        "help": "Optional custom excerpt"
+      },
+      {
+        "name": "slug",
+        "type": "str",
+        "required": false,
+        "help": "Optional URL slug"
+      },
+      {
+        "name": "tags",
+        "type": "str",
+        "required": false,
+        "help": "Comma-separated tag names (created if missing)"
+      }
+    ],
+    "columns": [
+      "id",
+      "status",
+      "title",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "ghost/publish.js",
+    "sourceFile": "ghost/publish.js"
+  },
+  {
+    "site": "ghost",
+    "name": "whoami",
+    "description": "Verify the Ghost connection by fetching site info (GET /ghost/api/admin/site). Use this to test that the site URL and Admin API key are valid before publishing.",
+    "access": "read",
+    "domain": "ghost.org",
+    "strategy": "local",
+    "browser": false,
+    "args": [],
+    "columns": [
+      "title",
+      "version",
+      "site"
+    ],
+    "type": "js",
+    "modulePath": "ghost/whoami.js",
+    "sourceFile": "ghost/whoami.js"
+  },
+  {
     "site": "gitee",
     "name": "login",
     "description": "Open gitee login and wait until the browser session is authenticated",
@@ -21617,6 +21954,117 @@
     "type": "js",
     "modulePath": "kimi/auth.js",
     "sourceFile": "kimi/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent"
+  },
+  {
+    "site": "kuaishou",
+    "name": "login",
+    "description": "Open kuaishou login and wait until the browser session is authenticated",
+    "access": "write",
+    "domain": "cp.kuaishou.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
+        "required": false,
+        "help": "Maximum seconds to wait for the user to finish login"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "site",
+      "logged_in"
+    ],
+    "type": "js",
+    "modulePath": "kuaishou/auth.js",
+    "sourceFile": "kuaishou/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "kuaishou",
+    "name": "publish",
+    "description": "发布视频到快手（一条命令完成上传+填写+发布；可选封面/定时/话题）",
+    "access": "write",
+    "domain": "cp.kuaishou.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "video",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "视频文件路径"
+      },
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "help": "作品标题（无 --desc 时作为描述）"
+      },
+      {
+        "name": "desc",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "视频描述（默认用标题）"
+      },
+      {
+        "name": "tags",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "话题标签，逗号分隔，最多取前 3 个（不含 #）"
+      },
+      {
+        "name": "cover",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "封面图片路径（可选）"
+      },
+      {
+        "name": "schedule",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "定时发布时间（ISO8601 或 Unix 秒；不填即立即发布）"
+      }
+    ],
+    "columns": [
+      "status",
+      "title",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "kuaishou/publish.js",
+    "sourceFile": "kuaishou/publish.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "kuaishou",
+    "name": "whoami",
+    "description": "Show the current logged-in kuaishou account",
+    "access": "read",
+    "domain": "cp.kuaishou.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "site",
+      "logged_in"
+    ],
+    "type": "js",
+    "modulePath": "kuaishou/auth.js",
+    "sourceFile": "kuaishou/auth.js",
     "navigateBefore": false,
     "siteSession": "persistent"
   },
@@ -35857,6 +36305,53 @@
   },
   {
     "site": "tiktok",
+    "name": "publish",
+    "description": "Publish a video to TikTok (one command: upload + caption + publish; optional schedule)",
+    "access": "write",
+    "domain": "www.tiktok.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "video",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Video file path"
+      },
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "help": "Caption / title text"
+      },
+      {
+        "name": "tags",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Comma-separated hashtags (without #)"
+      },
+      {
+        "name": "schedule",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Scheduled publish time (ISO8601 or Unix seconds); omit to post now"
+      }
+    ],
+    "columns": [
+      "status",
+      "title",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "tiktok/publish.js",
+    "sourceFile": "tiktok/publish.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "tiktok",
     "name": "save",
     "description": "Add a TikTok video to Favorites",
     "access": "write",
@@ -41984,6 +42479,112 @@
     "sourceFile": "wikipedia/trending.js"
   },
   {
+    "site": "wordpress",
+    "name": "publish",
+    "description": "Publish a post to a self-hosted WordPress site via the REST API. A Markdown body is converted to HTML automatically. Defaults to a draft for safety — pass --status publish to go live.",
+    "access": "write",
+    "domain": "wordpress.org",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "help": "Post title"
+      },
+      {
+        "name": "content",
+        "type": "str",
+        "required": false,
+        "help": "Post body (Markdown or HTML). Or use --file."
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "Read the post body from a local file instead of --content"
+      },
+      {
+        "name": "markup",
+        "type": "str",
+        "default": "auto",
+        "required": false,
+        "help": "How to interpret the body: auto-detect (default), markdown, or html",
+        "choices": [
+          "auto",
+          "markdown",
+          "html"
+        ]
+      },
+      {
+        "name": "status",
+        "type": "str",
+        "default": "draft",
+        "required": false,
+        "help": "Post status (default: draft)",
+        "choices": [
+          "draft",
+          "publish",
+          "pending",
+          "private"
+        ]
+      },
+      {
+        "name": "excerpt",
+        "type": "str",
+        "required": false,
+        "help": "Optional excerpt / summary"
+      },
+      {
+        "name": "slug",
+        "type": "str",
+        "required": false,
+        "help": "Optional URL slug"
+      },
+      {
+        "name": "categories",
+        "type": "str",
+        "required": false,
+        "help": "Comma-separated category IDs"
+      },
+      {
+        "name": "tags",
+        "type": "str",
+        "required": false,
+        "help": "Comma-separated tag IDs"
+      }
+    ],
+    "columns": [
+      "id",
+      "status",
+      "title",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "wordpress/publish.js",
+    "sourceFile": "wordpress/publish.js"
+  },
+  {
+    "site": "wordpress",
+    "name": "whoami",
+    "description": "Verify the WordPress connection by fetching the authenticated user (GET /wp/v2/users/me). Use this to test that the site URL and Application Password are valid before publishing.",
+    "access": "read",
+    "domain": "wordpress.org",
+    "strategy": "local",
+    "browser": false,
+    "args": [],
+    "columns": [
+      "id",
+      "name",
+      "slug",
+      "site"
+    ],
+    "type": "js",
+    "modulePath": "wordpress/whoami.js",
+    "sourceFile": "wordpress/whoami.js"
+  },
+  {
     "site": "woshipm",
     "name": "article",
     "description": "发布文章到人人都是产品经理（woshipm.com）。默认提交审核（正式发布），加 --draft 仅存草稿。正文默认 Markdown，图片自动转存到站内图床。注意：平台为审核制，提交后稿件进入待审核（pending），运营 24h 内人工审核通过才公开。",
@@ -45412,6 +46013,80 @@
     "modulePath": "youtube/playlist.js",
     "sourceFile": "youtube/playlist.js",
     "navigateBefore": "https://www.youtube.com"
+  },
+  {
+    "site": "youtube",
+    "name": "publish",
+    "description": "Publish a video to YouTube via Studio (one command: upload + metadata + publish)",
+    "access": "write",
+    "domain": "www.youtube.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "video",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Video file path"
+      },
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "help": "Video title (≤100 chars)"
+      },
+      {
+        "name": "description",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Video description"
+      },
+      {
+        "name": "tags",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Comma-separated tags"
+      },
+      {
+        "name": "thumbnail",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Thumbnail image path (optional)"
+      },
+      {
+        "name": "playlist",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Playlist name to add to (optional)"
+      },
+      {
+        "name": "visibility",
+        "type": "str",
+        "default": "public",
+        "required": false,
+        "help": "Visibility",
+        "choices": [
+          "public",
+          "unlisted",
+          "private"
+        ]
+      }
+    ],
+    "columns": [
+      "status",
+      "title",
+      "visibility",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "youtube/publish.js",
+    "sourceFile": "youtube/publish.js",
+    "navigateBefore": false
   },
   {
     "site": "youtube",
