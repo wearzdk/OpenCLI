@@ -1,5 +1,5 @@
 import { cli, Strategy } from '@jackwener/opencli/registry';
-import { checkLogin } from '../_shared/article/auth.js';
+import { checkLogin, cookieQuickCheck } from '../_shared/article/auth.js';
 import { juejinProfile } from './article.js';
 
 // ── 掘金登录状态检测（whoami）──────────────────────────────────────────────
@@ -18,6 +18,11 @@ cli({
     strategy: Strategy.COOKIE,
     browser: true,
     columns: ['logged_in', 'user_id', 'username'],
+    // 快速登录检测（`auth status` quick / 桌面 GUI 用）：掘金登录态由字节跳动 session
+    // cookie 承载（实测：去掉 sessionid 系列即翻匿名），命中任一即已登录。
+    authStatus: {
+        quickCheck: cookieQuickCheck('https://juejin.cn', ['sessionid', 'sessionid_ss', 'sid_tt']),
+    },
     func: async (page) => {
         const r = await checkLogin(page, authProfile);
         return [{

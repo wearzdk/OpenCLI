@@ -1,5 +1,5 @@
 import { cli, Strategy } from '@jackwener/opencli/registry';
-import { checkLogin } from '../_shared/article/auth.js';
+import { checkLogin, cookieQuickCheck } from '../_shared/article/auth.js';
 import { csdnProfile } from './article.js';
 
 // checkAuth 与 home 从 article.js 的 csdnProfile 复用，保持单一来源
@@ -19,6 +19,11 @@ cli({
     browser: true,
     args: [],
     columns: ['logged_in', 'user_id', 'username'],
+    // 快速登录检测（`auth status` quick / 桌面 GUI 用）：CSDN 登录态由 UserToken
+    // 承载（实测：去掉它鉴权接口翻匿名），cookie 写在 .csdn.net 顶域。
+    authStatus: {
+        quickCheck: cookieQuickCheck('https://www.csdn.net', ['UserToken']),
+    },
     func: async (page) => {
         const r = await checkLogin(page, authProfile);
         return [

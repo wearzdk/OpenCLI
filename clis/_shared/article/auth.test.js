@@ -1,6 +1,33 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { buildCheckAuthJs, checkLogin, requireLogin } from './auth.js';
+import { buildCheckAuthJs, checkLogin, cookieQuickCheck, requireLogin } from './auth.js';
+
+describe('cookieQuickCheck', () => {
+    const cookiePage = (cookies) => ({ getCookies: vi.fn().mockResolvedValue(cookies) });
+
+    it('命中精确 cookie 名（有值）即判已登录', async () => {
+        const qc = cookieQuickCheck('https://x.test', ['sessionid']);
+        const r = await qc(cookiePage([{ name: 'sessionid', value: 'abc' }]));
+        expect(r).toEqual({ logged_in: true });
+    });
+
+    it('cookie 缺失或空值 → 未登录', async () => {
+        const qc = cookieQuickCheck('https://x.test', ['sessionid']);
+        expect(await qc(cookiePage([{ name: 'other', value: 'x' }]))).toEqual({ logged_in: false });
+        expect(await qc(cookiePage([{ name: 'sessionid', value: '' }]))).toEqual({ logged_in: false });
+    });
+
+    it('按前缀匹配（WordPress wordpress_logged_in_<hash>）', async () => {
+        const qc = cookieQuickCheck('https://x.test', [], ['wordpress_logged_in_']);
+        const r = await qc(cookiePage([{ name: 'wordpress_logged_in_deadbeef', value: 'v' }]));
+        expect(r).toEqual({ logged_in: true });
+    });
+
+    it('命中任一名即可（多 cookie 家族）', async () => {
+        const qc = cookieQuickCheck('https://x.test', ['BDUSS', 'BDUSS_BFESS']);
+        expect(await qc(cookiePage([{ name: 'BDUSS_BFESS', value: 'v' }]))).toEqual({ logged_in: true });
+    });
+});
 
 describe('buildCheckAuthJs', () => {
     it('内联 PAGE_RUNTIME + checkAuth 源码并归一返回字段', () => {

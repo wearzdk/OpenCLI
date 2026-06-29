@@ -1,5 +1,5 @@
 import { cli, Strategy } from '@jackwener/opencli/registry';
-import { checkLogin } from '../_shared/article/auth.js';
+import { checkLogin, cookieQuickCheck } from '../_shared/article/auth.js';
 import { cnblogsAuthProfile } from './article.js';
 
 cli({
@@ -11,6 +11,11 @@ cli({
     strategy: Strategy.COOKIE,
     browser: true,
     columns: ['logged_in', 'user_id', 'username'],
+    // 快速登录检测（`auth status` quick / 桌面 GUI 用）：博客园登录态由
+    // .Cnblogs.AspNetCore.Cookies 承载（实测：去掉它鉴权接口翻匿名）。
+    authStatus: {
+        quickCheck: cookieQuickCheck('https://home.cnblogs.com', ['.Cnblogs.AspNetCore.Cookies']),
+    },
     func: async (page) => {
         const r = await checkLogin(page, cnblogsAuthProfile);
         return [{

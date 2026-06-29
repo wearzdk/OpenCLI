@@ -1,5 +1,5 @@
 import { cli, Strategy } from '@jackwener/opencli/registry';
-import { checkLogin } from '../_shared/article/auth.js';
+import { checkLogin, cookieQuickCheck } from '../_shared/article/auth.js';
 import { segmentfaultProfile } from './article.js';
 
 // 思否 checkAuth：移植自 Wechatsync SegmentfaultAdapter.checkAuth()。
@@ -41,6 +41,11 @@ cli({
     strategy: Strategy.COOKIE,
     browser: true,
     columns: ['logged_in', 'user_id', 'username'],
+    // 快速登录检测（`auth status` quick / 桌面 GUI 用）：思否登录态由 PHPSESSID
+    // 承载（实测：去掉它鉴权接口翻匿名，仅留它也仍登录）。
+    authStatus: {
+        quickCheck: cookieQuickCheck('https://segmentfault.com', ['PHPSESSID']),
+    },
     func: async (page) => {
         const r = await checkLogin(page, authProfile);
         return [{ logged_in: r.isAuthenticated, user_id: r.userId, username: r.username }];

@@ -3151,6 +3151,36 @@
   },
   {
     "site": "baijiahao",
+    "name": "login",
+    "description": "打开百家号登录页并等待浏览器完成登录（供桌面客户端引导登录）。",
+    "access": "write",
+    "domain": "baijiahao.baidu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
+        "required": false,
+        "help": "等待用户完成登录的最长秒数"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "baijiahao/login.js",
+    "sourceFile": "baijiahao/login.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "baijiahao",
     "name": "whoami",
     "description": "检测百家号当前登录状态，返回账号信息。",
     "access": "read",
@@ -7872,6 +7902,36 @@
     "modulePath": "cnblogs/article.js",
     "sourceFile": "cnblogs/article.js",
     "navigateBefore": "https://cnblogs.com"
+  },
+  {
+    "site": "cnblogs",
+    "name": "login",
+    "description": "打开博客园登录页并等待浏览器完成登录（供桌面客户端引导登录）。",
+    "access": "write",
+    "domain": "cnblogs.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
+        "required": false,
+        "help": "等待用户完成登录的最长秒数"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "cnblogs/login.js",
+    "sourceFile": "cnblogs/login.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
   },
   {
     "site": "cnblogs",
@@ -17762,6 +17822,36 @@
     "modulePath": "imooc/article.js",
     "sourceFile": "imooc/article.js",
     "navigateBefore": "https://www.imooc.com"
+  },
+  {
+    "site": "imooc",
+    "name": "login",
+    "description": "打开慕课网登录页并等待浏览器完成登录（供桌面客户端引导登录）。",
+    "access": "write",
+    "domain": "imooc.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
+        "required": false,
+        "help": "等待用户完成登录的最长秒数"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "imooc/login.js",
+    "sourceFile": "imooc/login.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
   },
   {
     "site": "imooc",
@@ -30916,6 +31006,36 @@
   },
   {
     "site": "segmentfault",
+    "name": "login",
+    "description": "打开思否（SegmentFault）登录页并等待浏览器完成登录（供桌面客户端引导登录）。",
+    "access": "write",
+    "domain": "segmentfault.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
+        "required": false,
+        "help": "等待用户完成登录的最长秒数"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "segmentfault/login.js",
+    "sourceFile": "segmentfault/login.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "segmentfault",
     "name": "tags",
     "description": "按名称校验思否标签是否存在并返回其真实 id，供 `segmentfault article --tags` 取合法标签。思否发文强制选标签，禁止臆造标签名/id。",
     "access": "read",
@@ -30956,8 +31076,8 @@
       "username"
     ],
     "type": "js",
-    "modulePath": "segmentfault/whoami.js",
-    "sourceFile": "segmentfault/whoami.js",
+    "modulePath": "segmentfault/login.js",
+    "sourceFile": "segmentfault/login.js",
     "navigateBefore": "https://segmentfault.com"
   },
   {
@@ -33250,6 +33370,36 @@
     "modulePath": "sohu/columns.js",
     "sourceFile": "sohu/columns.js",
     "navigateBefore": "https://mp.sohu.com"
+  },
+  {
+    "site": "sohu",
+    "name": "login",
+    "description": "打开搜狐号登录页并等待浏览器完成登录（供桌面客户端引导登录）。",
+    "access": "write",
+    "domain": "mp.sohu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
+        "required": false,
+        "help": "等待用户完成登录的最长秒数"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "sohu/login.js",
+    "sourceFile": "sohu/login.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
   },
   {
     "site": "sohu",
@@ -41396,6 +41546,36 @@
     "modulePath": "woshipm/article.js",
     "sourceFile": "woshipm/article.js",
     "navigateBefore": "https://www.woshipm.com"
+  },
+  {
+    "site": "woshipm",
+    "name": "login",
+    "description": "打开人人都是产品经理登录页并等待浏览器完成登录（供桌面客户端引导登录）。",
+    "access": "write",
+    "domain": "woshipm.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
+        "required": false,
+        "help": "等待用户完成登录的最长秒数"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "woshipm/login.js",
+    "sourceFile": "woshipm/login.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
   },
   {
     "site": "woshipm",

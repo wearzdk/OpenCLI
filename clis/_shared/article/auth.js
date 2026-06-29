@@ -88,8 +88,37 @@ export async function requireLogin(page, profile, siteLabel) {
     return r;
 }
 
+/**
+ * 构造「快速登录检测」（quickCheck）：只读 cookie、不导航，开销极小。
+ *
+ * 供 `auth status` 的 quick 模式用——桌面 GUI 正是靠它判断登录状态（基于 getCookies，
+ * 能读到 HttpOnly，且不会驱动浏览器窗口、不和正在进行的登录抢自动化窗口）。
+ * 文章平台原本只有 whoami（full probe，会导航+调接口），没有 quickCheck，于是
+ * `auth status` 一律返回「quickCheck not implemented」，GUI 表现为「检测不到登录状态」。
+ *
+ * 命中任一登录态 cookie 即视为已登录。cookie 名必须实测确认（去掉它接口翻匿名），
+ * 不能凭记忆猜。
+ *
+ * @param {string} url        读 cookie 的目标 URL（决定带哪些域的 cookie）
+ * @param {string[]} names     登录态 cookie 名（精确匹配，命中任一且有值即已登录）
+ * @param {string[]} [prefixes] 登录态 cookie 名前缀（如 WordPress 的
+ *   `wordpress_logged_in_<hash>`，hash 随站固定，只能按前缀匹配）
+ * @returns {(page: { getCookies: Function }) => Promise<{ logged_in: boolean }>}
+ */
+export function cookieQuickCheck(url, names, prefixes = []) {
+    const want = new Set(names);
+    return async (page) => {
+        const cookies = await page.getCookies({ url });
+        const logged_in = cookies.some(
+            (c) => c.value && (want.has(c.name) || prefixes.some((p) => c.name.startsWith(p))),
+        );
+        return { logged_in };
+    };
+}
+
 export const __test__ = {
     buildCheckAuthJs,
     checkLogin,
     requireLogin,
+    cookieQuickCheck,
 };
