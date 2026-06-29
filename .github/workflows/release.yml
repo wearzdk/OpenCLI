@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -23,6 +24,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Self-reference symlink: the package is published as `publishport-opencli`
+      # but the 1600+ adapters import `@jackwener/opencli/*` (the install dir name).
+      # Locally and in CI we point that dir back at the package root so the package
+      # exports resolve. node_modules is never published, so this is build-time only.
+      - name: Link self-reference for adapter imports
+        run: |
+          mkdir -p node_modules/@jackwener
+          ln -sfn ../.. node_modules/@jackwener/opencli
+
       - name: Type check
         run: npx tsc --noEmit
 
@@ -36,6 +46,13 @@ jobs:
             echo "::error::cli-manifest.json drift detected at release time. Run 'npm run build' locally and commit the result before tagging."
             exit 1
           fi
+
+      # Publish the npm package as soon as it is built and verified, before the
+      # extension/release steps, so the publish is not gated on extension health.
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Install extension dependencies
         run: npm ci
@@ -55,19 +72,17 @@ jobs:
           cd extension-package
           zip -r ../opencli-extension-v${EXT_VERSION}.zip .
 
+      # Only on a real tag push — a manual/dispatch run has no tag to release against.
       - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3.0.0
         with:
           generate_release_notes: true
           files: |
             opencli-extension-v*.zip
 
-      - name: Publish to npm
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
       - name: Trigger website rebuild
+        if: startsWith(github.ref, 'refs/tags/')
         uses: peter-evans/repository-dispatch@v4
         with:
           token: ${{ secrets.WEBSITE_DEPLOY_TOKEN }}
