@@ -15149,6 +15149,103 @@
     "navigateBefore": false
   },
   {
+    "site": "ghost",
+    "name": "publish",
+    "description": "Publish a post to a Ghost site via the Admin API. A Markdown body is converted to HTML automatically (sent with ?source=html). Defaults to a draft for safety — pass --status published to go live.",
+    "access": "write",
+    "domain": "ghost.org",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "help": "Post title"
+      },
+      {
+        "name": "content",
+        "type": "str",
+        "required": false,
+        "help": "Post body (Markdown or HTML). Or use --file."
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "Read the post body from a local file instead of --content"
+      },
+      {
+        "name": "markup",
+        "type": "str",
+        "default": "auto",
+        "required": false,
+        "help": "How to interpret the body: auto-detect (default), markdown, or html",
+        "choices": [
+          "auto",
+          "markdown",
+          "html"
+        ]
+      },
+      {
+        "name": "status",
+        "type": "str",
+        "default": "draft",
+        "required": false,
+        "help": "Post status (default: draft)",
+        "choices": [
+          "draft",
+          "published"
+        ]
+      },
+      {
+        "name": "excerpt",
+        "type": "str",
+        "required": false,
+        "help": "Optional custom excerpt"
+      },
+      {
+        "name": "slug",
+        "type": "str",
+        "required": false,
+        "help": "Optional URL slug"
+      },
+      {
+        "name": "tags",
+        "type": "str",
+        "required": false,
+        "help": "Comma-separated tag names (created if missing)"
+      }
+    ],
+    "columns": [
+      "id",
+      "status",
+      "title",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "ghost/publish.js",
+    "sourceFile": "ghost/publish.js"
+  },
+  {
+    "site": "ghost",
+    "name": "whoami",
+    "description": "Verify the Ghost connection by fetching site info (GET /ghost/api/admin/site). Use this to test that the site URL and Admin API key are valid before publishing.",
+    "access": "read",
+    "domain": "ghost.org",
+    "strategy": "local",
+    "browser": false,
+    "args": [],
+    "columns": [
+      "title",
+      "version",
+      "site"
+    ],
+    "type": "js",
+    "modulePath": "ghost/whoami.js",
+    "sourceFile": "ghost/whoami.js"
+  },
+  {
     "site": "gitee",
     "name": "login",
     "description": "Open gitee login and wait until the browser session is authenticated",
@@ -41484,6 +41581,112 @@
     "type": "js",
     "modulePath": "wikipedia/trending.js",
     "sourceFile": "wikipedia/trending.js"
+  },
+  {
+    "site": "wordpress",
+    "name": "publish",
+    "description": "Publish a post to a self-hosted WordPress site via the REST API. A Markdown body is converted to HTML automatically. Defaults to a draft for safety — pass --status publish to go live.",
+    "access": "write",
+    "domain": "wordpress.org",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "help": "Post title"
+      },
+      {
+        "name": "content",
+        "type": "str",
+        "required": false,
+        "help": "Post body (Markdown or HTML). Or use --file."
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "Read the post body from a local file instead of --content"
+      },
+      {
+        "name": "markup",
+        "type": "str",
+        "default": "auto",
+        "required": false,
+        "help": "How to interpret the body: auto-detect (default), markdown, or html",
+        "choices": [
+          "auto",
+          "markdown",
+          "html"
+        ]
+      },
+      {
+        "name": "status",
+        "type": "str",
+        "default": "draft",
+        "required": false,
+        "help": "Post status (default: draft)",
+        "choices": [
+          "draft",
+          "publish",
+          "pending",
+          "private"
+        ]
+      },
+      {
+        "name": "excerpt",
+        "type": "str",
+        "required": false,
+        "help": "Optional excerpt / summary"
+      },
+      {
+        "name": "slug",
+        "type": "str",
+        "required": false,
+        "help": "Optional URL slug"
+      },
+      {
+        "name": "categories",
+        "type": "str",
+        "required": false,
+        "help": "Comma-separated category IDs"
+      },
+      {
+        "name": "tags",
+        "type": "str",
+        "required": false,
+        "help": "Comma-separated tag IDs"
+      }
+    ],
+    "columns": [
+      "id",
+      "status",
+      "title",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "wordpress/publish.js",
+    "sourceFile": "wordpress/publish.js"
+  },
+  {
+    "site": "wordpress",
+    "name": "whoami",
+    "description": "Verify the WordPress connection by fetching the authenticated user (GET /wp/v2/users/me). Use this to test that the site URL and Application Password are valid before publishing.",
+    "access": "read",
+    "domain": "wordpress.org",
+    "strategy": "local",
+    "browser": false,
+    "args": [],
+    "columns": [
+      "id",
+      "name",
+      "slug",
+      "site"
+    ],
+    "type": "js",
+    "modulePath": "wordpress/whoami.js",
+    "sourceFile": "wordpress/whoami.js"
   },
   {
     "site": "woshipm",
