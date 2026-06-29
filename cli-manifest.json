@@ -3181,6 +3181,46 @@
   },
   {
     "site": "baijiahao",
+    "name": "publish",
+    "description": "发布视频到百家号（一条命令完成上传+填写+发布；可选定时）",
+    "access": "write",
+    "domain": "baijiahao.baidu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "video",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "视频文件路径"
+      },
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "help": "视频标题（不足 8 字会自动补「你不知道的」，截断到 30 字）"
+      },
+      {
+        "name": "schedule",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "定时发布时间（ISO8601 或 Unix 秒；不填即立即发布）"
+      }
+    ],
+    "columns": [
+      "status",
+      "title",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "baijiahao/publish.js",
+    "sourceFile": "baijiahao/publish.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "baijiahao",
     "name": "whoami",
     "description": "检测百家号当前登录状态，返回账号信息。",
     "access": "read",
@@ -3765,6 +3805,37 @@
   },
   {
     "site": "bilibili",
+    "name": "biliup-login",
+    "description": "B站 biliup 扫码登录，生成投稿用 cookie（一次性）",
+    "access": "write",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "account",
+        "type": "str",
+        "default": "default",
+        "required": false,
+        "help": "biliup 账号名（cookie 存 ~/.publishport/bilibili/<account>.json）"
+      },
+      {
+        "name": "cookie",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "直接指定 cookie 输出路径（覆盖 --account）"
+      }
+    ],
+    "columns": [
+      "status",
+      "cookie"
+    ],
+    "type": "js",
+    "modulePath": "bilibili/publish.js",
+    "sourceFile": "bilibili/publish.js"
+  },
+  {
+    "site": "bilibili",
     "name": "categories",
     "description": "列出 B站专栏文章分类树（id + 名称 + 父分类），供 `bilibili article --category` 取合法分类 id。优先选叶子分类（is_leaf=true）。",
     "access": "read",
@@ -4340,6 +4411,81 @@
     "modulePath": "bilibili/me.js",
     "sourceFile": "bilibili/me.js",
     "navigateBefore": "https://www.bilibili.com"
+  },
+  {
+    "site": "bilibili",
+    "name": "publish",
+    "aliases": [
+      "upload-video"
+    ],
+    "description": "投稿视频到B站（经官方 biliup；一条命令完成；需先 biliup-login）",
+    "access": "write",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "video",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "视频文件路径"
+      },
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "help": "稿件标题"
+      },
+      {
+        "name": "desc",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "稿件简介"
+      },
+      {
+        "name": "tid",
+        "type": "str",
+        "required": true,
+        "help": "分区 ID（B站 category id，如体育-足球=...）"
+      },
+      {
+        "name": "tags",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "标签，逗号分隔（tag1,tag2）"
+      },
+      {
+        "name": "schedule",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "定时发布时间（ISO8601 或 Unix 秒；不填即立即）"
+      },
+      {
+        "name": "account",
+        "type": "str",
+        "default": "default",
+        "required": false,
+        "help": "biliup 账号名（cookie 存 ~/.publishport/bilibili/<account>.json）"
+      },
+      {
+        "name": "cookie",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "直接指定 biliup cookie 文件路径（覆盖 --account）"
+      }
+    ],
+    "columns": [
+      "status",
+      "title",
+      "tid"
+    ],
+    "type": "js",
+    "modulePath": "bilibili/publish.js",
+    "sourceFile": "bilibili/publish.js"
   },
   {
     "site": "bilibili",
@@ -21424,6 +21570,117 @@
     "siteSession": "persistent"
   },
   {
+    "site": "kuaishou",
+    "name": "login",
+    "description": "Open kuaishou login and wait until the browser session is authenticated",
+    "access": "write",
+    "domain": "cp.kuaishou.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
+        "required": false,
+        "help": "Maximum seconds to wait for the user to finish login"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "site",
+      "logged_in"
+    ],
+    "type": "js",
+    "modulePath": "kuaishou/auth.js",
+    "sourceFile": "kuaishou/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "kuaishou",
+    "name": "publish",
+    "description": "发布视频到快手（一条命令完成上传+填写+发布；可选封面/定时/话题）",
+    "access": "write",
+    "domain": "cp.kuaishou.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "video",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "视频文件路径"
+      },
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "help": "作品标题（无 --desc 时作为描述）"
+      },
+      {
+        "name": "desc",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "视频描述（默认用标题）"
+      },
+      {
+        "name": "tags",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "话题标签，逗号分隔，最多取前 3 个（不含 #）"
+      },
+      {
+        "name": "cover",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "封面图片路径（可选）"
+      },
+      {
+        "name": "schedule",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "定时发布时间（ISO8601 或 Unix 秒；不填即立即发布）"
+      }
+    ],
+    "columns": [
+      "status",
+      "title",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "kuaishou/publish.js",
+    "sourceFile": "kuaishou/publish.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "kuaishou",
+    "name": "whoami",
+    "description": "Show the current logged-in kuaishou account",
+    "access": "read",
+    "domain": "cp.kuaishou.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "site",
+      "logged_in"
+    ],
+    "type": "js",
+    "modulePath": "kuaishou/auth.js",
+    "sourceFile": "kuaishou/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent"
+  },
+  {
     "site": "lesswrong",
     "name": "comments",
     "description": "Top comments on a post",
@@ -35359,6 +35616,53 @@
   },
   {
     "site": "tiktok",
+    "name": "publish",
+    "description": "Publish a video to TikTok (one command: upload + caption + publish; optional schedule)",
+    "access": "write",
+    "domain": "www.tiktok.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "video",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Video file path"
+      },
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "help": "Caption / title text"
+      },
+      {
+        "name": "tags",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Comma-separated hashtags (without #)"
+      },
+      {
+        "name": "schedule",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Scheduled publish time (ISO8601 or Unix seconds); omit to post now"
+      }
+    ],
+    "columns": [
+      "status",
+      "title",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "tiktok/publish.js",
+    "sourceFile": "tiktok/publish.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "tiktok",
     "name": "save",
     "description": "Add a TikTok video to Favorites",
     "access": "write",
@@ -44914,6 +45218,80 @@
     "modulePath": "youtube/playlist.js",
     "sourceFile": "youtube/playlist.js",
     "navigateBefore": "https://www.youtube.com"
+  },
+  {
+    "site": "youtube",
+    "name": "publish",
+    "description": "Publish a video to YouTube via Studio (one command: upload + metadata + publish)",
+    "access": "write",
+    "domain": "www.youtube.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "video",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Video file path"
+      },
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "help": "Video title (≤100 chars)"
+      },
+      {
+        "name": "description",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Video description"
+      },
+      {
+        "name": "tags",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Comma-separated tags"
+      },
+      {
+        "name": "thumbnail",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Thumbnail image path (optional)"
+      },
+      {
+        "name": "playlist",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Playlist name to add to (optional)"
+      },
+      {
+        "name": "visibility",
+        "type": "str",
+        "default": "public",
+        "required": false,
+        "help": "Visibility",
+        "choices": [
+          "public",
+          "unlisted",
+          "private"
+        ]
+      }
+    ],
+    "columns": [
+      "status",
+      "title",
+      "visibility",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "youtube/publish.js",
+    "sourceFile": "youtube/publish.js",
+    "navigateBefore": false
   },
   {
     "site": "youtube",
