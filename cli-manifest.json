@@ -14440,6 +14440,105 @@
     "siteSession": "persistent"
   },
   {
+    "site": "farcaster",
+    "name": "login",
+    "description": "Configure a Farcaster FID + signer key (no browser). Validates the key locally.",
+    "access": "write",
+    "domain": "farcaster.xyz",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "fid",
+        "type": "string",
+        "required": false,
+        "help": "Your Farcaster FID (number)"
+      },
+      {
+        "name": "signer",
+        "type": "string",
+        "required": false,
+        "help": "ed25519 signer private key (64 hex chars) — must be registered for this FID"
+      },
+      {
+        "name": "hub",
+        "type": "string",
+        "default": "https://hub.pinata.cloud",
+        "required": false,
+        "help": "Hub HTTP API base URL (default https://hub.pinata.cloud)"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "site",
+      "fid",
+      "signer_pubkey",
+      "hub"
+    ],
+    "type": "js",
+    "modulePath": "farcaster/auth.js",
+    "sourceFile": "farcaster/auth.js"
+  },
+  {
+    "site": "farcaster",
+    "name": "post",
+    "description": "Publish a Farcaster cast (text + optional image/embed URLs)",
+    "access": "write",
+    "domain": "farcaster.xyz",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "text",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Cast text (≤320 bytes)"
+      },
+      {
+        "name": "embeds",
+        "type": "string",
+        "required": false,
+        "help": "Embed URLs (image/frame/link), comma-separated, max 2"
+      },
+      {
+        "name": "channel",
+        "type": "string",
+        "required": false,
+        "help": "Channel parent URL (e.g. https://warpcast.com/~/channel/dev)"
+      }
+    ],
+    "columns": [
+      "status",
+      "hash",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "farcaster/post.js",
+    "sourceFile": "farcaster/post.js"
+  },
+  {
+    "site": "farcaster",
+    "name": "whoami",
+    "description": "Show the configured farcaster account",
+    "access": "read",
+    "domain": "farcaster.xyz",
+    "strategy": "local",
+    "browser": false,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "site",
+      "fid",
+      "signer_pubkey",
+      "hub"
+    ],
+    "type": "js",
+    "modulePath": "farcaster/auth.js",
+    "sourceFile": "farcaster/auth.js"
+  },
+  {
     "site": "flathub",
     "name": "app",
     "description": "Full Flathub appstream metadata for an app id (license, categories, latest release)",
@@ -24240,6 +24339,125 @@
     "siteSession": "persistent"
   },
   {
+    "site": "mastodon",
+    "name": "login",
+    "description": "Configure a Mastodon instance + access token (no browser).",
+    "access": "write",
+    "domain": "joinmastodon.org",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "instance",
+        "type": "string",
+        "required": false,
+        "help": "Instance URL, e.g. https://mastodon.social"
+      },
+      {
+        "name": "token",
+        "type": "string",
+        "required": false,
+        "help": "Access token (Settings → Development; needs write:statuses, write:media)"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "site",
+      "id",
+      "username",
+      "acct",
+      "instance"
+    ],
+    "type": "js",
+    "modulePath": "mastodon/auth.js",
+    "sourceFile": "mastodon/auth.js"
+  },
+  {
+    "site": "mastodon",
+    "name": "post",
+    "description": "Publish a Mastodon status (text + optional media)",
+    "access": "write",
+    "domain": "joinmastodon.org",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "text",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Status text"
+      },
+      {
+        "name": "media",
+        "type": "string",
+        "required": false,
+        "help": "Media paths, comma-separated, max 4 (images/video)"
+      },
+      {
+        "name": "alt",
+        "type": "string",
+        "required": false,
+        "help": "Alt text / description applied to all media"
+      },
+      {
+        "name": "visibility",
+        "type": "string",
+        "default": "public",
+        "required": false,
+        "help": "public | unlisted | private | direct",
+        "choices": [
+          "public",
+          "unlisted",
+          "private",
+          "direct"
+        ]
+      },
+      {
+        "name": "sensitive",
+        "type": "boolean",
+        "required": false,
+        "help": "Mark media as sensitive"
+      },
+      {
+        "name": "spoiler",
+        "type": "string",
+        "required": false,
+        "help": "Content warning / spoiler text"
+      }
+    ],
+    "columns": [
+      "status",
+      "id",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "mastodon/post.js",
+    "sourceFile": "mastodon/post.js"
+  },
+  {
+    "site": "mastodon",
+    "name": "whoami",
+    "description": "Show the configured mastodon account",
+    "access": "read",
+    "domain": "joinmastodon.org",
+    "strategy": "local",
+    "browser": false,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "site",
+      "id",
+      "username",
+      "acct",
+      "instance"
+    ],
+    "type": "js",
+    "modulePath": "mastodon/auth.js",
+    "sourceFile": "mastodon/auth.js"
+  },
+  {
     "site": "maven",
     "name": "artifact",
     "description": "Fetch a Maven Central artifact's version history (groupId:artifactId[:version])",
@@ -24710,6 +24928,100 @@
     "modulePath": "mubu/search.js",
     "sourceFile": "mubu/search.js",
     "navigateBefore": "https://mubu.com"
+  },
+  {
+    "site": "nostr",
+    "name": "login",
+    "description": "Configure a Nostr nsec + relay list (no browser). Validates the key locally.",
+    "access": "write",
+    "domain": "nostr.com",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "nsec",
+        "type": "string",
+        "required": false,
+        "help": "Secret key in nsec bech32 form (NOT your hex key in plaintext logs)"
+      },
+      {
+        "name": "relays",
+        "type": "string",
+        "required": false,
+        "help": "Relay URLs, comma-separated, e.g. wss://relay.damus.io,wss://nos.lol"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "site",
+      "npub",
+      "pubkey",
+      "relays"
+    ],
+    "type": "js",
+    "modulePath": "nostr/auth.js",
+    "sourceFile": "nostr/auth.js"
+  },
+  {
+    "site": "nostr",
+    "name": "post",
+    "description": "Publish a Nostr note (kind 1) to your relays (text + optional image URLs)",
+    "access": "write",
+    "domain": "nostr.com",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "text",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Note content"
+      },
+      {
+        "name": "image-url",
+        "type": "string",
+        "required": false,
+        "help": "External image URL(s), comma-separated (appended; clients embed them)"
+      },
+      {
+        "name": "relays",
+        "type": "string",
+        "required": false,
+        "help": "Override configured relays for this post (comma-separated wss://)"
+      }
+    ],
+    "columns": [
+      "status",
+      "id",
+      "note",
+      "relays_ok",
+      "relays_total"
+    ],
+    "type": "js",
+    "modulePath": "nostr/post.js",
+    "sourceFile": "nostr/post.js"
+  },
+  {
+    "site": "nostr",
+    "name": "whoami",
+    "description": "Show the configured nostr account",
+    "access": "read",
+    "domain": "nostr.com",
+    "strategy": "local",
+    "browser": false,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "site",
+      "npub",
+      "pubkey",
+      "relays"
+    ],
+    "type": "js",
+    "modulePath": "nostr/auth.js",
+    "sourceFile": "nostr/auth.js"
   },
   {
     "site": "notebooklm",
@@ -34897,6 +35209,94 @@
     "modulePath": "tdx/hot-rank.js",
     "sourceFile": "tdx/hot-rank.js",
     "navigateBefore": true
+  },
+  {
+    "site": "telegram",
+    "name": "login",
+    "description": "Configure a Telegram bot token + target channel id (no browser).",
+    "access": "write",
+    "domain": "telegram.org",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "token",
+        "type": "string",
+        "required": false,
+        "help": "Bot token from @BotFather"
+      },
+      {
+        "name": "chat",
+        "type": "string",
+        "required": false,
+        "help": "Channel id: @channelusername or -100xxxxxxxxxx (bot must be an admin)"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "site",
+      "id",
+      "username",
+      "name",
+      "chat"
+    ],
+    "type": "js",
+    "modulePath": "telegram/auth.js",
+    "sourceFile": "telegram/auth.js"
+  },
+  {
+    "site": "telegram",
+    "name": "post",
+    "description": "Send a message to the configured Telegram channel (text + optional media)",
+    "access": "write",
+    "domain": "telegram.org",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "text",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Message text / media caption"
+      },
+      {
+        "name": "media",
+        "type": "string",
+        "required": false,
+        "help": "Media paths, comma-separated, max 10 (images/video)"
+      }
+    ],
+    "columns": [
+      "status",
+      "message_id",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "telegram/post.js",
+    "sourceFile": "telegram/post.js"
+  },
+  {
+    "site": "telegram",
+    "name": "whoami",
+    "description": "Show the configured telegram account",
+    "access": "read",
+    "domain": "telegram.org",
+    "strategy": "local",
+    "browser": false,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "site",
+      "id",
+      "username",
+      "name",
+      "chat"
+    ],
+    "type": "js",
+    "modulePath": "telegram/auth.js",
+    "sourceFile": "telegram/auth.js"
   },
   {
     "site": "ths",
