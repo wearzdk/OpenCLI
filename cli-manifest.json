@@ -4662,6 +4662,100 @@
   },
   {
     "site": "bilibili",
+    "name": "upload",
+    "description": "投稿视频到 B站（复用客户端的浏览器登录态，底层用 biliup）。默认仅 dry-run 校验，加 --execute 才真正上传。",
+    "access": "write",
+    "domain": "www.bilibili.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "file",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "视频文件路径（多P 用 --more 追加）"
+      },
+      {
+        "name": "title",
+        "type": "str",
+        "required": false,
+        "help": "稿件标题（默认取文件名）"
+      },
+      {
+        "name": "tag",
+        "type": "str",
+        "required": true,
+        "help": "标签，逗号分隔（B站要求至少 1 个）"
+      },
+      {
+        "name": "tid",
+        "type": "number",
+        "required": false,
+        "help": "分区 id（如 201 科学科普；不传用 biliup 默认）"
+      },
+      {
+        "name": "desc",
+        "type": "str",
+        "required": false,
+        "help": "简介"
+      },
+      {
+        "name": "cover",
+        "type": "str",
+        "required": false,
+        "help": "封面图片路径（不传由 B站自动截取）"
+      },
+      {
+        "name": "copyright",
+        "type": "number",
+        "required": false,
+        "help": "1=自制 2=转载（默认 1）"
+      },
+      {
+        "name": "source",
+        "type": "str",
+        "required": false,
+        "help": "转载来源 URL（copyright=2 时建议填）"
+      },
+      {
+        "name": "line",
+        "type": "str",
+        "required": false,
+        "help": "上传线路：bda2/ws/qn/bldsa/tx/txa/bda/alia（不传自动选）"
+      },
+      {
+        "name": "dtime",
+        "type": "number",
+        "required": false,
+        "help": "定时发布的 10 位 unix 时间戳"
+      },
+      {
+        "name": "more",
+        "type": "str",
+        "required": false,
+        "help": "追加的视频文件（多P），逗号分隔多个路径"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "真正投稿；不带则只做 dry-run 校验"
+      }
+    ],
+    "columns": [
+      "status",
+      "title",
+      "files",
+      "output"
+    ],
+    "type": "js",
+    "modulePath": "bilibili/upload.js",
+    "sourceFile": "bilibili/upload.js",
+    "navigateBefore": "https://www.bilibili.com"
+  },
+  {
+    "site": "bilibili",
     "name": "user-videos",
     "description": "查看指定用户的投稿视频",
     "access": "read",
