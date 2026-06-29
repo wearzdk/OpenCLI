@@ -131,7 +131,10 @@ function authWhoamiCommands(): CliCommand[] {
     .filter((cmd) => {
       if (seen.has(cmd)) return false;
       seen.add(cmd);
-      return cmd.name === 'whoami' && cmd.browser === true && cmd.access === 'read';
+      // A site's auth probe is its read-only `whoami`. Browser sites verify a
+      // cookie session; credential/token sites (Bluesky/Mastodon/Nostr/…) run a
+      // non-browser whoami that validates a stored token via API. Both count.
+      return cmd.name === 'whoami' && cmd.access === 'read';
     })
     .sort((a, b) => a.site.localeCompare(b.site));
 }
@@ -196,8 +199,19 @@ function identitySummary(result: unknown): string {
   return '';
 }
 
+// Detect "not logged in" robustly. `instanceof AuthRequiredError` is the fast
+// path, but in dev mode (running src/ while adapters resolve to the built dist/
+// package) the error crosses a module boundary and is a different class
+// identity, so also accept the stable machine code. (In a packaged build
+// everything is one instance and the first check already matches.)
+function isAuthRequired(error: unknown): boolean {
+  return error instanceof AuthRequiredError
+    || (typeof error === 'object' && error !== null
+      && (error as { code?: unknown }).code === 'AUTH_REQUIRED');
+}
+
 function rowForError(site: string, checked: AuthStatusMode, error: unknown): AuthStatusRow {
-  if (error instanceof AuthRequiredError) {
+  if (isAuthRequired(error)) {
     return { site, status: 'not_logged_in', logged_in: false, identity: '', checked, error: '' };
   }
   const code = error instanceof CliError ? error.code : '';
@@ -249,7 +263,7 @@ function normalizeRefreshStatus(result: unknown): 'refreshed' | 'touched' {
 }
 
 function refreshRowForError(site: string, entry: AuthRefreshSiteState | undefined, error: unknown): AuthRefreshRow {
-  if (error instanceof AuthRequiredError) {
+  if (isAuthRequired(error)) {
     return {
       site,
       status: 'not_logged_in',
@@ -272,6 +286,16 @@ function refreshRowForError(site: string, entry: AuthRefreshSiteState | undefine
 async function runQuick(cmd: CliCommand, opts: { timeoutSeconds: number; profile?: string }): Promise<AuthStatusRow> {
   try {
     const loaded = await loadLazyCommand(cmd);
+    // Credential/token whoami is a plain API call with no browser to launch, so
+    // the whoami itself is the cheap quick check — run it directly. Success ⇒
+    // logged in; AuthRequiredError (no/invalid creds) ⇒ not logged in.
+    if (loaded.browser !== true) {
+      const directCmd = withTimeoutArg(loaded, opts.timeoutSeconds);
+      const result = await executeCommand(directCmd, { timeout: opts.timeoutSeconds } as CommandArgs, false, {
+        ...(opts.profile ? { profile: opts.profile } : {}),
+      });
+      return { site: cmd.site, status: 'logged_in', logged_in: true, identity: identitySummary(result), checked: 'quick', error: '' };
+    }
     const quickCmd = quickCheckCommand(loaded, opts.timeoutSeconds);
     if (!quickCmd) {
       return {
@@ -387,7 +411,7 @@ async function runRefresh(cmd: CliCommand, opts: {
       error: '',
     };
   } catch (error) {
-    const status: AuthRefreshStatus = error instanceof AuthRequiredError ? 'not_logged_in' : 'error';
+    const status: AuthRefreshStatus = isAuthRequired(error) ? 'not_logged_in' : 'error';
     opts.state.sites[cmd.site] = { ...existing, last_attempt_at: attemptAt, last_status: status };
     return refreshRowForError(cmd.site, existing, error);
   }

@@ -5406,6 +5406,85 @@
   },
   {
     "site": "bluesky",
+    "name": "login",
+    "description": "Configure Bluesky with a handle + app password (no browser).",
+    "access": "write",
+    "domain": "bsky.app",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "identifier",
+        "type": "string",
+        "required": false,
+        "help": "Bluesky handle or email (e.g. alice.bsky.social)"
+      },
+      {
+        "name": "password",
+        "type": "string",
+        "required": false,
+        "help": "App password from Settings → App Passwords (NOT your main password)"
+      },
+      {
+        "name": "service",
+        "type": "string",
+        "default": "https://bsky.social",
+        "required": false,
+        "help": "PDS service URL (default https://bsky.social)"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "site",
+      "did",
+      "handle"
+    ],
+    "type": "js",
+    "modulePath": "bluesky/auth.js",
+    "sourceFile": "bluesky/auth.js"
+  },
+  {
+    "site": "bluesky",
+    "name": "post",
+    "description": "Publish a Bluesky post (text + optional images)",
+    "access": "write",
+    "domain": "bsky.app",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "text",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Post text (≤300 graphemes)"
+      },
+      {
+        "name": "images",
+        "type": "string",
+        "required": false,
+        "help": "Image paths, comma-separated, max 4 (jpg/png/gif/webp)"
+      },
+      {
+        "name": "alt",
+        "type": "string",
+        "required": false,
+        "help": "Alt text applied to all images (accessibility)"
+      }
+    ],
+    "columns": [
+      "status",
+      "uri",
+      "cid",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "bluesky/post.js",
+    "sourceFile": "bluesky/post.js"
+  },
+  {
+    "site": "bluesky",
     "name": "profile",
     "description": "Get Bluesky user profile info",
     "access": "read",
@@ -5599,6 +5678,25 @@
     "type": "js",
     "modulePath": "bluesky/user.js",
     "sourceFile": "bluesky/user.js"
+  },
+  {
+    "site": "bluesky",
+    "name": "whoami",
+    "description": "Show the configured bluesky account",
+    "access": "read",
+    "domain": "bsky.app",
+    "strategy": "local",
+    "browser": false,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "site",
+      "did",
+      "handle"
+    ],
+    "type": "js",
+    "modulePath": "bluesky/auth.js",
+    "sourceFile": "bluesky/auth.js"
   },
   {
     "site": "booking",

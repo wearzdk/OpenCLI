@@ -142,6 +142,51 @@ describe('auth status collection', () => {
     ]);
   });
 
+  it('treats a non-browser credential whoami as its own quick check (no quickCheck needed)', async () => {
+    cli({
+      site: 'tokensite',
+      name: 'whoami',
+      access: 'read',
+      description: 'tokensite whoami',
+      strategy: Strategy.LOCAL,
+      browser: false,
+      domain: 'tokensite.example.com',
+      args: [],
+      columns: ['logged_in', 'site', 'handle'],
+      func: async () => ({ logged_in: true, site: 'tokensite', handle: 'alice' }),
+    });
+
+    const rows = await collectAuthStatus({ sites: 'tokensite' });
+
+    expect(rows).toEqual([
+      { site: 'tokensite', status: 'logged_in', logged_in: true, identity: 'alice', checked: 'quick', error: '' },
+    ]);
+    // Ran the whoami func directly (no browser session options forced).
+    expect(executeCommandMock).toHaveBeenCalledTimes(1);
+    expect(executeCommandMock.mock.calls[0]?.[0]).toMatchObject({ site: 'tokensite', browser: false });
+  });
+
+  it('maps a non-browser credential whoami AuthRequiredError to not_logged_in (quick)', async () => {
+    cli({
+      site: 'tokensite2',
+      name: 'whoami',
+      access: 'read',
+      description: 'tokensite2 whoami',
+      strategy: Strategy.LOCAL,
+      browser: false,
+      domain: 'tokensite2.example.com',
+      args: [],
+      columns: ['logged_in', 'site'],
+      func: async () => { throw new AuthRequiredError('tokensite2'); },
+    });
+
+    const rows = await collectAuthStatus({ sites: 'tokensite2' });
+
+    expect(rows).toEqual([
+      { site: 'tokensite2', status: 'not_logged_in', logged_in: false, identity: '', checked: 'quick', error: '' },
+    ]);
+  });
+
   it('degrades a lazy adapter that throws on import to a per-site error row without rejecting', async () => {
     registerWhoami('alpha', { quick: true, quickLoggedIn: true });
     await registerThrowingLazyWhoami('broken');
