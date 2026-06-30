@@ -10917,6 +10917,122 @@
   },
   {
     "site": "devto",
+    "name": "login",
+    "description": "Configure DEV.to with an API key (no browser).",
+    "access": "write",
+    "domain": "dev.to",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "api_key",
+        "type": "string",
+        "required": false,
+        "help": "DEV.to API key (Settings → Extensions → DEV Community API Keys)"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "site",
+      "id",
+      "username",
+      "name"
+    ],
+    "type": "js",
+    "modulePath": "devto/auth.js",
+    "sourceFile": "devto/auth.js"
+  },
+  {
+    "site": "devto",
+    "name": "publish",
+    "description": "Publish or update a DEV.to article (markdown). Draft by default; pass --published to go live.",
+    "access": "write",
+    "domain": "dev.to",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "title",
+        "type": "string",
+        "required": false,
+        "help": "Article title (required for new articles)"
+      },
+      {
+        "name": "body",
+        "type": "string",
+        "required": false,
+        "help": "Article body in Markdown (or use --body-file)"
+      },
+      {
+        "name": "body-file",
+        "type": "string",
+        "required": false,
+        "help": "Path to a Markdown file for the body"
+      },
+      {
+        "name": "published",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Publish live now (default: save as draft)"
+      },
+      {
+        "name": "tags",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated tags, max 4, lowercase alphanumeric"
+      },
+      {
+        "name": "cover-image",
+        "type": "string",
+        "required": false,
+        "help": "Cover image URL (main_image)"
+      },
+      {
+        "name": "canonical-url",
+        "type": "string",
+        "required": false,
+        "help": "Canonical URL (original source)"
+      },
+      {
+        "name": "series",
+        "type": "string",
+        "required": false,
+        "help": "Series name to group articles"
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "required": false,
+        "help": "Social/SEO description"
+      },
+      {
+        "name": "organization-id",
+        "type": "int",
+        "required": false,
+        "help": "Publish under an organization id"
+      },
+      {
+        "name": "id",
+        "type": "string",
+        "required": false,
+        "help": "Existing article id to update (PUT instead of POST)"
+      }
+    ],
+    "columns": [
+      "status",
+      "id",
+      "url",
+      "published",
+      "slug"
+    ],
+    "type": "js",
+    "modulePath": "devto/publish.js",
+    "sourceFile": "devto/publish.js"
+  },
+  {
+    "site": "devto",
     "name": "read",
     "description": "Read a DEV.to article body by id",
     "access": "read",
@@ -11065,6 +11181,26 @@
     "type": "js",
     "modulePath": "devto/user.js",
     "sourceFile": "devto/user.js"
+  },
+  {
+    "site": "devto",
+    "name": "whoami",
+    "description": "Show the configured devto account",
+    "access": "read",
+    "domain": "dev.to",
+    "strategy": "local",
+    "browser": false,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "site",
+      "id",
+      "username",
+      "name"
+    ],
+    "type": "js",
+    "modulePath": "devto/auth.js",
+    "sourceFile": "devto/auth.js"
   },
   {
     "site": "dianping",
@@ -17291,6 +17427,147 @@
     "type": "js",
     "modulePath": "hackernews/user.js",
     "sourceFile": "hackernews/user.js"
+  },
+  {
+    "site": "hashnode",
+    "name": "login",
+    "description": "Configure Hashnode with a Personal Access Token (no browser).",
+    "access": "write",
+    "domain": "hashnode.com",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "token",
+        "type": "string",
+        "required": false,
+        "help": "Hashnode Personal Access Token (Settings → Developer)"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "site",
+      "id",
+      "username",
+      "name"
+    ],
+    "type": "js",
+    "modulePath": "hashnode/auth.js",
+    "sourceFile": "hashnode/auth.js"
+  },
+  {
+    "site": "hashnode",
+    "name": "publish",
+    "description": "Publish a Hashnode post (or save a draft with --draft). Markdown body + cover/tags/canonical.",
+    "access": "write",
+    "domain": "hashnode.com",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "title",
+        "type": "string",
+        "required": true,
+        "help": "Post title"
+      },
+      {
+        "name": "body",
+        "type": "string",
+        "required": false,
+        "help": "Post body in Markdown (or use --body-file)"
+      },
+      {
+        "name": "body-file",
+        "type": "string",
+        "required": false,
+        "help": "Path to a Markdown file for the body"
+      },
+      {
+        "name": "publication-id",
+        "type": "string",
+        "required": false,
+        "help": "Target publication id (else resolved automatically)"
+      },
+      {
+        "name": "publication-host",
+        "type": "string",
+        "required": false,
+        "help": "Resolve publication id by host (e.g. blog.example.com)"
+      },
+      {
+        "name": "tags",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated tag names (slug auto-derived)"
+      },
+      {
+        "name": "cover-image",
+        "type": "string",
+        "required": false,
+        "help": "Cover image URL"
+      },
+      {
+        "name": "canonical-url",
+        "type": "string",
+        "required": false,
+        "help": "Canonical / original article URL"
+      },
+      {
+        "name": "subtitle",
+        "type": "string",
+        "required": false,
+        "help": "Subtitle"
+      },
+      {
+        "name": "series-id",
+        "type": "string",
+        "required": false,
+        "help": "Series id to add the post to"
+      },
+      {
+        "name": "slug",
+        "type": "string",
+        "required": false,
+        "help": "Custom slug"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Save as draft instead of publishing"
+      }
+    ],
+    "columns": [
+      "status",
+      "id",
+      "slug",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "hashnode/publish.js",
+    "sourceFile": "hashnode/publish.js"
+  },
+  {
+    "site": "hashnode",
+    "name": "whoami",
+    "description": "Show the configured hashnode account",
+    "access": "read",
+    "domain": "hashnode.com",
+    "strategy": "local",
+    "browser": false,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "site",
+      "id",
+      "username",
+      "name"
+    ],
+    "type": "js",
+    "modulePath": "hashnode/auth.js",
+    "sourceFile": "hashnode/auth.js"
   },
   {
     "site": "hf",
@@ -29280,6 +29557,109 @@
     "sourceFile": "pypi/package.js"
   },
   {
+    "site": "qiita",
+    "name": "login",
+    "description": "Configure Qiita with a personal access token (no browser).",
+    "access": "write",
+    "domain": "qiita.com",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "token",
+        "type": "string",
+        "required": false,
+        "help": "Qiita personal access token (needs write_qiita scope)"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "site",
+      "id",
+      "name"
+    ],
+    "type": "js",
+    "modulePath": "qiita/auth.js",
+    "sourceFile": "qiita/auth.js"
+  },
+  {
+    "site": "qiita",
+    "name": "publish",
+    "description": "Publish or update a Qiita item (markdown). Tags are required; public by default.",
+    "access": "write",
+    "domain": "qiita.com",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "title",
+        "type": "string",
+        "required": false,
+        "help": "Item title (required for new items)"
+      },
+      {
+        "name": "body",
+        "type": "string",
+        "required": false,
+        "help": "Item body in Markdown (or use --body-file)"
+      },
+      {
+        "name": "body-file",
+        "type": "string",
+        "required": false,
+        "help": "Path to a Markdown file for the body"
+      },
+      {
+        "name": "tags",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated tags (REQUIRED, at least 1)"
+      },
+      {
+        "name": "private",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Post as private (default: public)"
+      },
+      {
+        "name": "id",
+        "type": "string",
+        "required": false,
+        "help": "Existing item id to update (PATCH instead of POST)"
+      }
+    ],
+    "columns": [
+      "status",
+      "id",
+      "url",
+      "private"
+    ],
+    "type": "js",
+    "modulePath": "qiita/publish.js",
+    "sourceFile": "qiita/publish.js"
+  },
+  {
+    "site": "qiita",
+    "name": "whoami",
+    "description": "Show the configured qiita account",
+    "access": "read",
+    "domain": "qiita.com",
+    "strategy": "local",
+    "browser": false,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "site",
+      "id",
+      "name"
+    ],
+    "type": "js",
+    "modulePath": "qiita/auth.js",
+    "sourceFile": "qiita/auth.js"
+  },
+  {
     "site": "qoder",
     "name": "account",
     "description": "Click the account button (username) in the Qoder sidebar and return the visible account dropdown items.",
@@ -35747,6 +36127,120 @@
     "sourceFile": "telegram/auth.js"
   },
   {
+    "site": "threads",
+    "name": "login",
+    "description": "Configure Threads with a Meta long-lived access token (no browser).",
+    "access": "write",
+    "domain": "threads.net",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "token",
+        "type": "string",
+        "required": false,
+        "help": "Threads long-lived access token (Meta app)"
+      },
+      {
+        "name": "user_id",
+        "type": "string",
+        "required": false,
+        "help": "Threads user id (auto-resolved via /me if omitted)"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "site",
+      "id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "threads/auth.js",
+    "sourceFile": "threads/auth.js"
+  },
+  {
+    "site": "threads",
+    "name": "post",
+    "description": "Publish a Threads post (text / single image / video / image carousel). Two-step container → publish.",
+    "access": "write",
+    "domain": "threads.net",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "text",
+        "type": "string",
+        "required": false,
+        "help": "Post text (required for TEXT; optional caption otherwise)"
+      },
+      {
+        "name": "image-url",
+        "type": "string",
+        "required": false,
+        "help": "Single public image URL (IMAGE post)"
+      },
+      {
+        "name": "video-url",
+        "type": "string",
+        "required": false,
+        "help": "Single public video URL (VIDEO post)"
+      },
+      {
+        "name": "images",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated image URLs for a carousel (2-20)"
+      },
+      {
+        "name": "alt-text",
+        "type": "string",
+        "required": false,
+        "help": "Accessibility alt text (single media)"
+      },
+      {
+        "name": "link-attachment",
+        "type": "string",
+        "required": false,
+        "help": "Link attachment URL (TEXT posts only)"
+      },
+      {
+        "name": "reply-to-id",
+        "type": "string",
+        "required": false,
+        "help": "Reply to an existing Threads media id"
+      }
+    ],
+    "columns": [
+      "status",
+      "id",
+      "creation_id",
+      "permalink"
+    ],
+    "type": "js",
+    "modulePath": "threads/publish.js",
+    "sourceFile": "threads/publish.js"
+  },
+  {
+    "site": "threads",
+    "name": "whoami",
+    "description": "Show the configured threads account",
+    "access": "read",
+    "domain": "threads.net",
+    "strategy": "local",
+    "browser": false,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "site",
+      "id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "threads/auth.js",
+    "sourceFile": "threads/auth.js"
+  },
+  {
     "site": "ths",
     "name": "hot-rank",
     "description": "同花顺热股榜",
@@ -38004,6 +38498,148 @@
     "type": "js",
     "modulePath": "trae-solo/workspaces-fs.js",
     "sourceFile": "trae-solo/workspaces-fs.js"
+  },
+  {
+    "site": "tumblr",
+    "name": "login",
+    "description": "Configure Tumblr with OAuth1 consumer + token credentials (no browser).",
+    "access": "write",
+    "domain": "tumblr.com",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "consumer_key",
+        "type": "string",
+        "required": false,
+        "help": "OAuth consumer key (from tumblr.com/oauth/apps)"
+      },
+      {
+        "name": "consumer_secret",
+        "type": "string",
+        "required": false,
+        "help": "OAuth consumer secret"
+      },
+      {
+        "name": "oauth_token",
+        "type": "string",
+        "required": false,
+        "help": "OAuth access token"
+      },
+      {
+        "name": "oauth_token_secret",
+        "type": "string",
+        "required": false,
+        "help": "OAuth access token secret"
+      },
+      {
+        "name": "default_blog",
+        "type": "string",
+        "required": false,
+        "help": "Default blog identifier for posting (else primary blog)"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "site",
+      "name",
+      "blogs",
+      "default_blog"
+    ],
+    "type": "js",
+    "modulePath": "tumblr/auth.js",
+    "sourceFile": "tumblr/auth.js"
+  },
+  {
+    "site": "tumblr",
+    "name": "post",
+    "description": "Create a Tumblr post (NPF: text/photo/link). Choose blog with --blog; state defaults to published.",
+    "access": "write",
+    "domain": "tumblr.com",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "text",
+        "type": "string",
+        "required": false,
+        "help": "Body text block"
+      },
+      {
+        "name": "title",
+        "type": "string",
+        "required": false,
+        "help": "Heading text block (rendered as a title)"
+      },
+      {
+        "name": "image-url",
+        "type": "string",
+        "required": false,
+        "help": "Image URL (photo block)"
+      },
+      {
+        "name": "link",
+        "type": "string",
+        "required": false,
+        "help": "Link URL (link block)"
+      },
+      {
+        "name": "tags",
+        "type": "string",
+        "required": false,
+        "help": "Comma-separated tags"
+      },
+      {
+        "name": "state",
+        "type": "string",
+        "default": "published",
+        "required": false,
+        "help": "published | draft | queue | private",
+        "choices": [
+          "published",
+          "draft",
+          "queue",
+          "private"
+        ]
+      },
+      {
+        "name": "blog",
+        "type": "string",
+        "required": false,
+        "help": "Blog identifier to post to (else credential default_blog / primary)"
+      }
+    ],
+    "columns": [
+      "status",
+      "id",
+      "blog",
+      "state",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "tumblr/publish.js",
+    "sourceFile": "tumblr/publish.js"
+  },
+  {
+    "site": "tumblr",
+    "name": "whoami",
+    "description": "Show the configured tumblr account",
+    "access": "read",
+    "domain": "tumblr.com",
+    "strategy": "local",
+    "browser": false,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "site",
+      "name",
+      "blogs",
+      "default_blog"
+    ],
+    "type": "js",
+    "modulePath": "tumblr/auth.js",
+    "sourceFile": "tumblr/auth.js"
   },
   {
     "site": "tvmaze",
