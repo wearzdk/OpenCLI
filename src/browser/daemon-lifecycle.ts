@@ -33,9 +33,16 @@ export function resolveDaemonLaunchSpec(): DaemonLaunchSpec {
   const daemonJs = path.join(parentDir, 'daemon.js');
   const isTs = fs.existsSync(daemonTs);
   const scriptPath = isTs ? daemonTs : daemonJs;
+  // Bun runs TypeScript natively, so the node-only `--import tsx/esm` preload is
+  // both unnecessary and harmful under Bun: when the spawn cwd has no tsx install
+  // (e.g. opencli_dev launched from a parent repo root) it fails with
+  // "preload not found tsx/esm", the daemon never binds, and browser commands
+  // surface as a bogus "无法连接 Chrome" / "Failed to start daemon".
+  const isBun = !!(process as { versions?: { bun?: string } }).versions?.bun;
+  const needsTsxPreload = isTs && !isBun;
   return {
     binary: process.execPath,
-    args: isTs ? ['--import', 'tsx/esm', scriptPath] : [scriptPath],
+    args: needsTsxPreload ? ['--import', 'tsx/esm', scriptPath] : [scriptPath],
     scriptPath,
   };
 }
