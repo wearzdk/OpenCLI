@@ -16943,39 +16943,43 @@
   {
     "site": "hashnode",
     "name": "login",
-    "description": "Configure Hashnode with a Personal Access Token (no browser).",
+    "description": "打开 Hashnode 登录页并等待浏览器完成登录（供桌面客户端引导登录）。",
     "access": "write",
     "domain": "hashnode.com",
-    "strategy": "local",
-    "browser": false,
+    "strategy": "cookie",
+    "browser": true,
     "args": [
       {
-        "name": "token",
-        "type": "string",
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
         "required": false,
-        "help": "Hashnode Personal Access Token (Settings → Developer)"
+        "help": "Maximum seconds to wait for the user to finish login"
       }
     ],
     "columns": [
       "status",
       "logged_in",
       "site",
-      "id",
+      "user_id",
       "username",
       "name"
     ],
     "type": "js",
     "modulePath": "hashnode/auth.js",
-    "sourceFile": "hashnode/auth.js"
+    "sourceFile": "hashnode/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
   },
   {
     "site": "hashnode",
     "name": "publish",
-    "description": "Publish a Hashnode post (or save a draft with --draft). Markdown body + cover/tags/canonical.",
+    "description": "Publish a Hashnode post via the web editor (or save a draft with --draft). Markdown body + tags/cover/canonical.",
     "access": "write",
     "domain": "hashnode.com",
-    "strategy": "local",
-    "browser": false,
+    "strategy": "cookie",
+    "browser": true,
     "args": [
       {
         "name": "title",
@@ -16996,22 +17000,10 @@
         "help": "Path to a Markdown file for the body"
       },
       {
-        "name": "publication-id",
-        "type": "string",
-        "required": false,
-        "help": "Target publication id (else resolved automatically)"
-      },
-      {
-        "name": "publication-host",
-        "type": "string",
-        "required": false,
-        "help": "Resolve publication id by host (e.g. blog.example.com)"
-      },
-      {
         "name": "tags",
         "type": "string",
         "required": false,
-        "help": "Comma-separated tag names (slug auto-derived)"
+        "help": "Comma-separated tag names"
       },
       {
         "name": "cover-image",
@@ -17026,24 +17018,6 @@
         "help": "Canonical / original article URL"
       },
       {
-        "name": "subtitle",
-        "type": "string",
-        "required": false,
-        "help": "Subtitle"
-      },
-      {
-        "name": "series-id",
-        "type": "string",
-        "required": false,
-        "help": "Series id to add the post to"
-      },
-      {
-        "name": "slug",
-        "type": "string",
-        "required": false,
-        "help": "Custom slug"
-      },
-      {
         "name": "draft",
         "type": "boolean",
         "default": false,
@@ -17053,33 +17027,37 @@
     ],
     "columns": [
       "status",
-      "id",
-      "slug",
+      "draft_id",
       "url"
     ],
     "type": "js",
     "modulePath": "hashnode/publish.js",
-    "sourceFile": "hashnode/publish.js"
+    "sourceFile": "hashnode/publish.js",
+    "navigateBefore": "https://hashnode.com",
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
   },
   {
     "site": "hashnode",
     "name": "whoami",
-    "description": "Show the configured hashnode account",
+    "description": "Show the current logged-in hashnode account",
     "access": "read",
     "domain": "hashnode.com",
-    "strategy": "local",
-    "browser": false,
+    "strategy": "cookie",
+    "browser": true,
     "args": [],
     "columns": [
       "logged_in",
       "site",
-      "id",
+      "user_id",
       "username",
       "name"
     ],
     "type": "js",
     "modulePath": "hashnode/auth.js",
-    "sourceFile": "hashnode/auth.js"
+    "sourceFile": "hashnode/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent"
   },
   {
     "site": "hf",
