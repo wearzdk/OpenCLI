@@ -1,55 +1,59 @@
-import { AuthRequiredError, CommandExecutionError } from '@jackwener/opencli/errors';
-import { registerTokenAuth, requireCredentials } from '../_shared/token-auth.js';
+/**
+ * dev.to (Forem) auth — login + whoami over the browser session cookie.
+ *
+ * [pp-only] 从「API key（registerTokenAuth）」改成「复用浏览器登录态（Strategy.COOKIE）」：
+ * 用户在 Chrome 里登录 dev.to，会话 cookie（Devise `remember_user_token` / `_Forem_Session`）
+ * 自动驱动写操作，不再要求去 Settings → Extensions 手动生成 DEV Community API Key。这与
+ * Forem 自家 web 编辑器同源（`POST /articles` + `meta[name=csrf-token]`，见 publish.js）。
+ *
+ * 身份来源：Forem 把当前登录用户的 JSON 注入到 `<body data-user="...">`（id/username/name），
+ * 同源页面直接读，无需任何 token。
+ *
+ * 真机 verify：`opencli devto login` → `opencli devto whoami` 显示 username
+ *   → `opencli devto publish --title ... --body ...`（先草稿后发布）。
+ */
+import { AuthRequiredError } from '@jackwener/opencli/errors';
+import { registerSiteAuthCommands } from '../_shared/site-auth.js';
 
-// DEV.to 鉴权：API key（在 dev.to → Settings → Extensions → DEV Community API Keys 生成）。
-// 所有写操作把它放进 `api-key` 请求头。参考 sinedied/devto-cli（MIT）。
-// ⚠️ 安全：api key 明文落 ~/.opencli/sites/devto/credentials.json（0600），经中转可达——
-// whoami 只回 id/username/name，绝不回显 key。
+const HOME = 'https://dev.to';
 
-export const DEVTO_API = 'https://dev.to/api';
-
-/** 取已配置的 api key（写命令用）。 */
-export function devtoApiKey() {
-  return requireCredentials('devto').api_key;
+// 登录态判定：Forem 用 Devise，登录后种 `remember_user_token`（HttpOnly，document.cookie 读不到，
+// 但 page.getCookies 能拿）。`_Forem_Session` 即便匿名也可能存在，故只认 remember_user_token。
+async function hasDevtoSession(page) {
+  const cookies = await page.getCookies({ url: HOME });
+  return cookies.some((c) => c.name === 'remember_user_token' && c.value);
 }
 
-/** 带 api-key 头打 DEV.to API，统一错误归一。 */
-export async function devtoFetch(apiKey, pathOrUrl, init = {}) {
-  const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${DEVTO_API}${pathOrUrl}`;
-  let res;
-  try {
-    res = await fetch(url, {
-      ...init,
-      headers: {
-        'api-key': apiKey,
-        'Content-Type': 'application/json',
-        Accept: 'application/vnd.forem.api-v1+json',
-        ...(init.headers ?? {}),
-      },
-    });
-  } catch (err) {
-    throw new CommandExecutionError(`DEV.to API request failed: ${err?.message ?? err}`);
+/** 读 `<body data-user>` 拿当前登录用户（id/username/name）。匿名时 data-user 为空或无 id。 */
+async function readDevtoUser(page) {
+  await page.goto(HOME);
+  const probe = await page.evaluate(`(() => {
+    try {
+      var du = document.body && document.body.getAttribute('data-user');
+      if (!du) return { ok: false, reason: 'no data-user' };
+      var u = JSON.parse(du);
+      if (!u || u.id == null) return { ok: false, reason: 'anonymous' };
+      return { ok: true, id: String(u.id), username: String(u.username || ''), name: String(u.name || '') };
+    } catch (e) { return { ok: false, reason: String(e && e.message || e) }; }
+  })()`);
+  if (!probe || !probe.ok) {
+    throw new AuthRequiredError('dev.to', `Not logged in (${probe ? probe.reason : 'no probe'})`);
   }
-  const body = await res.json().catch(() => ({}));
-  if (res.status === 401) {
-    throw new AuthRequiredError('dev.to', `DEV.to rejected the api key (HTTP 401): ${body?.error ?? 'check the key'}`);
-  }
-  if (!res.ok) {
-    throw new CommandExecutionError(`DEV.to API HTTP ${res.status}: ${body?.error ?? JSON.stringify(body).slice(0, 200)}`);
-  }
-  return body;
+  return { user_id: probe.id, username: probe.username, name: probe.name };
 }
 
-registerTokenAuth({
+registerSiteAuthCommands({
   site: 'devto',
   domain: 'dev.to',
-  fields: [
-    { name: 'api_key', required: true, help: 'DEV.to API key (Settings → Extensions → DEV Community API Keys)' },
-  ],
-  identityColumns: ['id', 'username', 'name'],
-  loginDescription: 'Configure DEV.to with an API key (no browser).',
-  validate: async (creds) => {
-    const me = await devtoFetch(creds.api_key, '/users/me');
-    return { id: me.id, username: me.username, name: me.name ?? '' };
+  loginUrl: 'https://dev.to/enter',
+  columns: ['user_id', 'username', 'name'],
+  loginDescription: '打开 dev.to 登录页并等待浏览器完成登录（供桌面客户端引导登录）。',
+  quickCheck: hasDevtoSession,
+  verify: readDevtoUser,
+  poll: async (page) => {
+    if (!await hasDevtoSession(page)) {
+      throw new AuthRequiredError('dev.to', 'Waiting for dev.to session cookie');
+    }
+    return readDevtoUser(page);
   },
 });

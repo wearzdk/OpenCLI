@@ -1,99 +1,81 @@
-import * as crypto from 'node:crypto';
-import { AuthRequiredError, CommandExecutionError } from '@jackwener/opencli/errors';
-import { registerTokenAuth, requireCredentials } from '../_shared/token-auth.js';
+/**
+ * Tumblr 鉴权 —— [pp-only] 从「OAuth1 四件套 token（registerTokenAuth）」改成
+ * 「复用浏览器登录态（Strategy.COOKIE）」：用户在 Chrome 里登录 tumblr.com，会话 cookie
+ * 自动驱动写操作，不再要求去 tumblr.com/oauth/apps 注册 app + 走授权拿四个密钥。
+ *
+ * 与官方 Web 仪表盘同源：登录后页面挂着 `window.tumblr.apiFetch(resource, init)`，它内部带好
+ * Authorization: Bearer + X-CSRF（运行时现取、自动续期），我们直接复用，不必从 bootstrap 抠 token。
+ * 参考 XKit-Rewritten（GPL-3.0）`src/main_world/api_fetch.js` 与 `src/utils/user.js`：
+ *   - apiFetch('/v2/user/info') → response.user（name / blogs[] / primary 博客）。
+ *   - 见 https://github.com/AprilSylph/XKit-Rewritten/blob/master/src/main_world/api_fetch.js
+ *     与 https://github.com/AprilSylph/XKit-Rewritten/blob/master/src/utils/user.js
+ *
+ * 登录态判定：登录后 tumblr.com 种 `logged_in=1`（匿名为 0 或不存在），page.getCookies 可读。
+ *
+ * 真机 verify：`opencli tumblr login` → `opencli tumblr whoami` 显示 name + 主博客
+ *   → `opencli tumblr publish --title ... --text ...`（先草稿后发布）。
+ */
+import { AuthRequiredError } from '@jackwener/opencli/errors';
+import { registerSiteAuthCommands } from '../_shared/site-auth.js';
 
-// Tumblr 鉴权：OAuth1.0a（consumer key/secret + oauth token/token secret，在
-// tumblr.com/oauth/apps 注册 app + 走一次授权拿 token）。NPF v2 API。参考 pytumblr2（Apache-2.0）。
-// ⚠️ 安全：四个 OAuth1 密钥明文落 ~/.opencli/sites/tumblr/credentials.json（0600），经中转可达——
-// whoami 只回 user name + blog 列表，绝不回显密钥。
+const HOME = 'https://www.tumblr.com';
+const DASHBOARD = 'https://www.tumblr.com/dashboard';
 
-export const TUMBLR_API = 'https://api.tumblr.com/v2';
-
-// RFC3986 严格百分号编码（OAuth1 要求，encodeURIComponent 不编码 !*'() ）。
-function pctEncode(str) {
-  return encodeURIComponent(str).replace(/[!*'()]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+// 登录态判定：tumblr.com 登录后种 `logged_in=1`（匿名时为 "0" 或缺失）。
+async function hasTumblrSession(page) {
+  const cookies = await page.getCookies({ url: HOME });
+  const c = cookies.find((x) => x.name === 'logged_in');
+  return !!(c && c.value && c.value !== '0');
 }
 
 /**
- * 生成 OAuth1 Authorization 头。JSON body 的 POST 不把 body 纳入签名（只签 oauth_* 参数 +
- * URL query），与 requests_oauthlib(json=) / tumblr.js 行为一致。
- * @param {object} creds {consumer_key, consumer_secret, oauth_token, oauth_token_secret}
+ * 读当前登录用户：打开已登录的仪表盘（同源），用页面自带的 window.tumblr.apiFetch
+ * 打 /v2/user/info 拿 name + 博客列表（apiFetch 内部带 Bearer + CSRF，credentials 同源）。
  */
-export function oauth1Header(method, url, creds, extraParams = {}) {
-  const oauthParams = {
-    oauth_consumer_key: creds.consumer_key,
-    oauth_nonce: crypto.randomBytes(16).toString('hex'),
-    oauth_signature_method: 'HMAC-SHA1',
-    oauth_timestamp: String(Math.floor(Date.now() / 1000)),
-    oauth_token: creds.oauth_token,
-    oauth_version: '1.0',
-  };
-  // 签名基串：所有 oauth_* 参数 + URL query 参数（本适配器 URL 无 query），不含 JSON body。
-  const allParams = { ...oauthParams, ...extraParams };
-  const paramString = Object.keys(allParams)
-    .sort()
-    .map((k) => `${pctEncode(k)}=${pctEncode(allParams[k])}`)
-    .join('&');
-  const baseString = [method.toUpperCase(), pctEncode(url), pctEncode(paramString)].join('&');
-  const signingKey = `${pctEncode(creds.consumer_secret)}&${pctEncode(creds.oauth_token_secret)}`;
-  const signature = crypto.createHmac('sha1', signingKey).update(baseString).digest('base64');
-  const header = { ...oauthParams, oauth_signature: signature };
-  return 'OAuth ' + Object.keys(header).map((k) => `${pctEncode(k)}="${pctEncode(header[k])}"`).join(', ');
-}
-
-/** OAuth1 签名后打 Tumblr API；统一错误归一。 */
-export async function tumblrFetch(creds, method, pathOrUrl, jsonBody) {
-  const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${TUMBLR_API}${pathOrUrl}`;
-  let res;
-  try {
-    res = await fetch(url, {
-      method,
-      headers: {
-        Authorization: oauth1Header(method, url, creds),
-        ...(jsonBody !== undefined ? { 'Content-Type': 'application/json' } : {}),
-      },
-      ...(jsonBody !== undefined ? { body: JSON.stringify(jsonBody) } : {}),
-    });
-  } catch (err) {
-    throw new CommandExecutionError(`Tumblr API request failed: ${err?.message ?? err}`);
+async function readTumblrUser(page) {
+  await page.goto(DASHBOARD);
+  const probe = await page.evaluate(`(async () => {
+    try {
+      if (!(window.tumblr && typeof window.tumblr.apiFetch === 'function')) {
+        return { ok: false, reason: 'apiFetch unavailable — not on a logged-in tumblr page?' };
+      }
+      var r = await window.tumblr.apiFetch('/v2/user/info');
+      var u = (r && r.response && r.response.user) || null;
+      if (!u || !u.name) return { ok: false, reason: 'anonymous' };
+      var blogs = (u.blogs || []).map(function (b) {
+        return { name: String(b.name || ''), primary: !!b.primary, uuid: String(b.uuid || '') };
+      });
+      var primary = blogs.filter(function (b) { return b.primary; })[0] || blogs[0] || null;
+      return {
+        ok: true,
+        name: String(u.name),
+        primary_blog: primary ? primary.name : '',
+        blogs: blogs.map(function (b) { return b.name; }).join(','),
+      };
+    } catch (e) {
+      var status = e && e.status;
+      if (status === 401 || status === 403) return { ok: false, reason: 'HTTP ' + status };
+      return { ok: false, reason: String((e && e.message) || e) };
+    }
+  })()`);
+  if (!probe || !probe.ok) {
+    throw new AuthRequiredError('tumblr.com', `Not logged in (${probe ? probe.reason : 'no probe'})`);
   }
-  const body = await res.json().catch(() => ({}));
-  if (res.status === 401) {
-    throw new AuthRequiredError('tumblr.com', `Tumblr rejected the OAuth1 credentials (HTTP 401): ${body?.meta?.msg ?? 'check the 4 keys'}`);
-  }
-  if (!res.ok) {
-    throw new CommandExecutionError(`Tumblr API HTTP ${res.status}: ${body?.meta?.msg ?? body?.errors?.[0]?.detail ?? ''}`);
-  }
-  return body.response ?? body;
+  return { name: probe.name, primary_blog: probe.primary_blog, blogs: probe.blogs };
 }
 
-export function tumblrCreds() {
-  return requireCredentials('tumblr');
-}
-
-/** blog 标识符归一化为 {name}.tumblr.com（已含点的原样）。 */
-export function blogHost(name) {
-  const n = String(name).trim();
-  return n.includes('.') ? n : `${n}.tumblr.com`;
-}
-
-registerTokenAuth({
+registerSiteAuthCommands({
   site: 'tumblr',
   domain: 'tumblr.com',
-  fields: [
-    { name: 'consumer_key', required: true, help: 'OAuth consumer key (from tumblr.com/oauth/apps)' },
-    { name: 'consumer_secret', required: true, help: 'OAuth consumer secret' },
-    { name: 'oauth_token', required: true, help: 'OAuth access token' },
-    { name: 'oauth_token_secret', required: true, help: 'OAuth access token secret' },
-    { name: 'default_blog', required: false, help: 'Default blog identifier for posting (else primary blog)' },
-  ],
-  identityColumns: ['name', 'blogs', 'default_blog'],
-  loginDescription: 'Configure Tumblr with OAuth1 consumer + token credentials (no browser).',
-  validate: async (creds) => {
-    const info = await tumblrFetch(creds, 'GET', '/user/info');
-    const user = info.user ?? {};
-    const blogs = (user.blogs ?? []).map((b) => b.name);
-    const primary = (user.blogs ?? []).find((b) => b.primary)?.name ?? blogs[0] ?? '';
-    return { name: user.name ?? '', blogs: blogs.join(','), default_blog: creds.default_blog || primary };
+  loginUrl: 'https://www.tumblr.com/login',
+  columns: ['name', 'primary_blog', 'blogs'],
+  loginDescription: '打开 Tumblr 登录页并等待浏览器完成登录（供桌面客户端引导登录）。',
+  quickCheck: hasTumblrSession,
+  verify: readTumblrUser,
+  poll: async (page) => {
+    if (!await hasTumblrSession(page)) {
+      throw new AuthRequiredError('tumblr.com', 'Waiting for tumblr.com session cookie');
+    }
+    return readTumblrUser(page);
   },
 });

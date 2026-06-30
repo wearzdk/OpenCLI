@@ -10918,30 +10918,34 @@
   {
     "site": "devto",
     "name": "login",
-    "description": "Configure DEV.to with an API key (no browser).",
+    "description": "打开 dev.to 登录页并等待浏览器完成登录（供桌面客户端引导登录）。",
     "access": "write",
     "domain": "dev.to",
-    "strategy": "local",
-    "browser": false,
+    "strategy": "cookie",
+    "browser": true,
     "args": [
       {
-        "name": "api_key",
-        "type": "string",
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
         "required": false,
-        "help": "DEV.to API key (Settings → Extensions → DEV Community API Keys)"
+        "help": "Maximum seconds to wait for the user to finish login"
       }
     ],
     "columns": [
       "status",
       "logged_in",
       "site",
-      "id",
+      "user_id",
       "username",
       "name"
     ],
     "type": "js",
     "modulePath": "devto/auth.js",
-    "sourceFile": "devto/auth.js"
+    "sourceFile": "devto/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
   },
   {
     "site": "devto",
@@ -10949,8 +10953,8 @@
     "description": "Publish or update a DEV.to article (markdown). Draft by default; pass --published to go live.",
     "access": "write",
     "domain": "dev.to",
-    "strategy": "local",
-    "browser": false,
+    "strategy": "cookie",
+    "browser": true,
     "args": [
       {
         "name": "title",
@@ -11008,12 +11012,6 @@
         "help": "Social/SEO description"
       },
       {
-        "name": "organization-id",
-        "type": "int",
-        "required": false,
-        "help": "Publish under an organization id"
-      },
-      {
         "name": "id",
         "type": "string",
         "required": false,
@@ -11029,7 +11027,8 @@
     ],
     "type": "js",
     "modulePath": "devto/publish.js",
-    "sourceFile": "devto/publish.js"
+    "sourceFile": "devto/publish.js",
+    "navigateBefore": "https://dev.to"
   },
   {
     "site": "devto",
@@ -11185,22 +11184,24 @@
   {
     "site": "devto",
     "name": "whoami",
-    "description": "Show the configured devto account",
+    "description": "Show the current logged-in devto account",
     "access": "read",
     "domain": "dev.to",
-    "strategy": "local",
-    "browser": false,
+    "strategy": "cookie",
+    "browser": true,
     "args": [],
     "columns": [
       "logged_in",
       "site",
-      "id",
+      "user_id",
       "username",
       "name"
     ],
     "type": "js",
     "modulePath": "devto/auth.js",
-    "sourceFile": "devto/auth.js"
+    "sourceFile": "devto/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent"
   },
   {
     "site": "dianping",
@@ -29845,51 +29846,81 @@
   },
   {
     "site": "qiita",
-    "name": "login",
-    "description": "Configure Qiita with a personal access token (no browser).",
+    "name": "delete",
+    "description": "Delete a Qiita article or draft by its URL (article linkUrl, or https://qiita.com/drafts/<uuid>).",
     "access": "write",
     "domain": "qiita.com",
-    "strategy": "local",
-    "browser": false,
+    "strategy": "cookie",
+    "browser": true,
     "args": [
       {
-        "name": "token",
+        "name": "url",
         "type": "string",
         "required": false,
-        "help": "Qiita personal access token (needs write_qiita scope)"
+        "help": "Article URL (e.g. https://qiita.com/<urlName>/items/<uuid>) or draft URL (https://qiita.com/drafts/<uuid>)"
+      }
+    ],
+    "columns": [
+      "status",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "qiita/publish.js",
+    "sourceFile": "qiita/publish.js",
+    "navigateBefore": "https://qiita.com"
+  },
+  {
+    "site": "qiita",
+    "name": "login",
+    "description": "打开 Qiita 登录页并等待浏览器完成登录（供桌面客户端引导登录）。",
+    "access": "write",
+    "domain": "qiita.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
+        "required": false,
+        "help": "Maximum seconds to wait for the user to finish login"
       }
     ],
     "columns": [
       "status",
       "logged_in",
       "site",
-      "id",
-      "name"
+      "url_name",
+      "name",
+      "user_id"
     ],
     "type": "js",
     "modulePath": "qiita/auth.js",
-    "sourceFile": "qiita/auth.js"
+    "sourceFile": "qiita/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
   },
   {
     "site": "qiita",
     "name": "publish",
-    "description": "Publish or update a Qiita item (markdown). Tags are required; public by default.",
+    "description": "Publish a Qiita article (markdown). Tags required. Public by default; --draft or --secret to change.",
     "access": "write",
     "domain": "qiita.com",
-    "strategy": "local",
-    "browser": false,
+    "strategy": "cookie",
+    "browser": true,
     "args": [
       {
         "name": "title",
         "type": "string",
         "required": false,
-        "help": "Item title (required for new items)"
+        "help": "Article title (required)"
       },
       {
         "name": "body",
         "type": "string",
         "required": false,
-        "help": "Item body in Markdown (or use --body-file)"
+        "help": "Article body in Markdown (or use --body-file)"
       },
       {
         "name": "body-file",
@@ -29904,47 +29935,58 @@
         "help": "Comma-separated tags (REQUIRED, at least 1)"
       },
       {
-        "name": "private",
+        "name": "draft",
         "type": "boolean",
         "default": false,
         "required": false,
-        "help": "Post as private (default: public)"
+        "help": "Save as draft only (do not publish)"
       },
       {
-        "name": "id",
-        "type": "string",
+        "name": "secret",
+        "type": "boolean",
+        "default": false,
         "required": false,
-        "help": "Existing item id to update (PATCH instead of POST)"
+        "help": "Publish as limited-public (secret) instead of public"
+      },
+      {
+        "name": "tweet-share",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Also share to X/Twitter on publish (public only)"
       }
     ],
     "columns": [
       "status",
-      "id",
-      "url",
-      "private"
+      "uuid",
+      "url"
     ],
     "type": "js",
     "modulePath": "qiita/publish.js",
-    "sourceFile": "qiita/publish.js"
+    "sourceFile": "qiita/publish.js",
+    "navigateBefore": "https://qiita.com"
   },
   {
     "site": "qiita",
     "name": "whoami",
-    "description": "Show the configured qiita account",
+    "description": "Show the current logged-in qiita account",
     "access": "read",
     "domain": "qiita.com",
-    "strategy": "local",
-    "browser": false,
+    "strategy": "cookie",
+    "browser": true,
     "args": [],
     "columns": [
       "logged_in",
       "site",
-      "id",
-      "name"
+      "url_name",
+      "name",
+      "user_id"
     ],
     "type": "js",
     "modulePath": "qiita/auth.js",
-    "sourceFile": "qiita/auth.js"
+    "sourceFile": "qiita/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent"
   },
   {
     "site": "qoder",
@@ -38915,42 +38957,51 @@
   },
   {
     "site": "tumblr",
-    "name": "login",
-    "description": "Configure Tumblr with OAuth1 consumer + token credentials (no browser).",
+    "name": "delete",
+    "description": "Delete a Tumblr post by id (POST /v2/blog/{blog}/post/delete).",
     "access": "write",
     "domain": "tumblr.com",
-    "strategy": "local",
-    "browser": false,
+    "strategy": "cookie",
+    "browser": true,
     "args": [
       {
-        "name": "consumer_key",
+        "name": "id",
         "type": "string",
-        "required": false,
-        "help": "OAuth consumer key (from tumblr.com/oauth/apps)"
+        "required": true,
+        "help": "Post id to delete"
       },
       {
-        "name": "consumer_secret",
+        "name": "blog",
         "type": "string",
         "required": false,
-        "help": "OAuth consumer secret"
-      },
+        "help": "Target blog identifier (else your primary blog)"
+      }
+    ],
+    "columns": [
+      "status",
+      "id",
+      "blog"
+    ],
+    "type": "js",
+    "modulePath": "tumblr/publish.js",
+    "sourceFile": "tumblr/publish.js",
+    "navigateBefore": "https://tumblr.com"
+  },
+  {
+    "site": "tumblr",
+    "name": "login",
+    "description": "打开 Tumblr 登录页并等待浏览器完成登录（供桌面客户端引导登录）。",
+    "access": "write",
+    "domain": "tumblr.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
       {
-        "name": "oauth_token",
-        "type": "string",
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
         "required": false,
-        "help": "OAuth access token"
-      },
-      {
-        "name": "oauth_token_secret",
-        "type": "string",
-        "required": false,
-        "help": "OAuth access token secret"
-      },
-      {
-        "name": "default_blog",
-        "type": "string",
-        "required": false,
-        "help": "Default blog identifier for posting (else primary blog)"
+        "help": "Maximum seconds to wait for the user to finish login"
       }
     ],
     "columns": [
@@ -38958,45 +39009,60 @@
       "logged_in",
       "site",
       "name",
-      "blogs",
-      "default_blog"
+      "primary_blog",
+      "blogs"
     ],
     "type": "js",
     "modulePath": "tumblr/auth.js",
-    "sourceFile": "tumblr/auth.js"
+    "sourceFile": "tumblr/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
   },
   {
     "site": "tumblr",
-    "name": "post",
-    "description": "Create a Tumblr post (NPF: text/photo/link). Choose blog with --blog; state defaults to published.",
+    "name": "publish",
+    "description": "Publish a Tumblr post (NPF: title/text/image/link). Draft by default; pass --state published to go live.",
     "access": "write",
     "domain": "tumblr.com",
-    "strategy": "local",
-    "browser": false,
+    "strategy": "cookie",
+    "browser": true,
     "args": [
-      {
-        "name": "text",
-        "type": "string",
-        "required": false,
-        "help": "Body text block"
-      },
       {
         "name": "title",
         "type": "string",
         "required": false,
-        "help": "Heading text block (rendered as a title)"
+        "help": "Title (rendered as a heading1 text block)"
+      },
+      {
+        "name": "text",
+        "type": "string",
+        "required": false,
+        "help": "Body text (blank lines split paragraphs); alias of --body"
+      },
+      {
+        "name": "body",
+        "type": "string",
+        "required": false,
+        "help": "Body text (blank lines split paragraphs)"
+      },
+      {
+        "name": "body-file",
+        "type": "string",
+        "required": false,
+        "help": "Path to a text file for the body"
       },
       {
         "name": "image-url",
         "type": "string",
         "required": false,
-        "help": "Image URL (photo block)"
+        "help": "Image URL (NPF image block)"
       },
       {
         "name": "link",
         "type": "string",
         "required": false,
-        "help": "Link URL (link block)"
+        "help": "Link URL (NPF link block)"
       },
       {
         "name": "tags",
@@ -39007,9 +39073,9 @@
       {
         "name": "state",
         "type": "string",
-        "default": "published",
+        "default": "draft",
         "required": false,
-        "help": "published | draft | queue | private",
+        "help": "draft | published | queue | private (default: draft)",
         "choices": [
           "published",
           "draft",
@@ -39021,7 +39087,7 @@
         "name": "blog",
         "type": "string",
         "required": false,
-        "help": "Blog identifier to post to (else credential default_blog / primary)"
+        "help": "Target blog identifier (else your primary blog)"
       }
     ],
     "columns": [
@@ -39033,27 +39099,30 @@
     ],
     "type": "js",
     "modulePath": "tumblr/publish.js",
-    "sourceFile": "tumblr/publish.js"
+    "sourceFile": "tumblr/publish.js",
+    "navigateBefore": "https://tumblr.com"
   },
   {
     "site": "tumblr",
     "name": "whoami",
-    "description": "Show the configured tumblr account",
+    "description": "Show the current logged-in tumblr account",
     "access": "read",
     "domain": "tumblr.com",
-    "strategy": "local",
-    "browser": false,
+    "strategy": "cookie",
+    "browser": true,
     "args": [],
     "columns": [
       "logged_in",
       "site",
       "name",
-      "blogs",
-      "default_blog"
+      "primary_blog",
+      "blogs"
     ],
     "type": "js",
     "modulePath": "tumblr/auth.js",
-    "sourceFile": "tumblr/auth.js"
+    "sourceFile": "tumblr/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent"
   },
   {
     "site": "tvmaze",

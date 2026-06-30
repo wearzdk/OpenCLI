@@ -1,48 +1,48 @@
-import { AuthRequiredError, CommandExecutionError } from '@jackwener/opencli/errors';
-import { registerTokenAuth, requireCredentials } from '../_shared/token-auth.js';
+/**
+ * Qiita auth — login + whoami over the browser session cookie.
+ *
+ * [pp-only] 从「PAT（registerTokenAuth + Bearer）」改成「复用浏览器登录态（Strategy.COOKIE）」：
+ * 用户在 Chrome 登录 qiita.com，会话 cookie `_qiita_login_session` 自动驱动写操作，不再要求去
+ * Settings → Applications 手动生成带 write_qiita scope 的个人访问令牌。这与 Qiita 自家 web
+ * 编辑器同源（`POST /graphql` + `meta[name=csrf-token]`，见 publish.js）。
+ *
+ * 身份来源：GraphQL `{ viewer { urlName name originalId } }`（同源、带 cookie），匿名时
+ * 返回 `Login required` 错误。
+ *
+ * 真机 verify：`opencli qiita login` → `opencli qiita whoami` 显示 urlName
+ *   → `opencli qiita publish ...`（先草稿后发布）。
+ */
+import { AuthRequiredError } from '@jackwener/opencli/errors';
+import { registerSiteAuthCommands } from '../_shared/site-auth.js';
+import { qiitaViewer } from './gql.js';
 
-// Qiita 鉴权：个人访问令牌 PAT（Settings → Applications → 个人用アクセストークン，
-// 需勾选 write_qiita 才能发布）。Bearer 头。参考官方 increments/qiita-cli（Apache-2.0）。
-// ⚠️ 安全：token 明文落 ~/.opencli/sites/qiita/credentials.json（0600），经中转可达——
-// whoami 只回 id/name，绝不回显 token。
+const HOME = 'https://qiita.com';
 
-export const QIITA_API = 'https://qiita.com/api/v2';
-
-export function qiitaToken() {
-  return requireCredentials('qiita').token;
+// 登录态判定：Qiita 用 `_qiita_login_session` cookie 承载登录态（HttpOnly，page.getCookies 可读）。
+async function hasQiitaSession(page) {
+  const cookies = await page.getCookies({ url: HOME });
+  return cookies.some((c) => c.name === '_qiita_login_session' && c.value);
 }
 
-export async function qiitaFetch(token, pathOrUrl, init = {}) {
-  const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${QIITA_API}${pathOrUrl}`;
-  let res;
-  try {
-    res = await fetch(url, {
-      ...init,
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(init.headers ?? {}) },
-    });
-  } catch (err) {
-    throw new CommandExecutionError(`Qiita API request failed: ${err?.message ?? err}`);
-  }
-  const body = await res.json().catch(() => ({}));
-  if (res.status === 401) {
-    throw new AuthRequiredError('qiita.com', `Qiita rejected the token (HTTP 401): ${body?.message ?? 'check the PAT / write_qiita scope'}`);
-  }
-  if (!res.ok) {
-    throw new CommandExecutionError(`Qiita API HTTP ${res.status}: ${body?.message ?? JSON.stringify(body).slice(0, 200)}`);
-  }
-  return body;
+/** 读 GraphQL viewer 拿当前登录用户。匿名时抛 AuthRequiredError。 */
+async function readQiitaViewer(page) {
+  await page.goto(`${HOME}/`);
+  const v = await qiitaViewer(page);
+  return { url_name: v.urlName, name: v.name || '', user_id: String(v.originalId ?? '') };
 }
 
-registerTokenAuth({
+registerSiteAuthCommands({
   site: 'qiita',
   domain: 'qiita.com',
-  fields: [
-    { name: 'token', required: true, help: 'Qiita personal access token (needs write_qiita scope)' },
-  ],
-  identityColumns: ['id', 'name'],
-  loginDescription: 'Configure Qiita with a personal access token (no browser).',
-  validate: async (creds) => {
-    const me = await qiitaFetch(creds.token, '/authenticated_user');
-    return { id: me.id, name: me.name ?? '' };
+  loginUrl: 'https://qiita.com/login',
+  columns: ['url_name', 'name', 'user_id'],
+  loginDescription: '打开 Qiita 登录页并等待浏览器完成登录（供桌面客户端引导登录）。',
+  quickCheck: hasQiitaSession,
+  verify: readQiitaViewer,
+  poll: async (page) => {
+    if (!await hasQiitaSession(page)) {
+      throw new AuthRequiredError('qiita.com', 'Waiting for Qiita session cookie');
+    }
+    return readQiitaViewer(page);
   },
 });
