@@ -25749,6 +25749,118 @@
     "sourceFile": "nostr/auth.js"
   },
   {
+    "site": "note",
+    "name": "login",
+    "description": "Open note login and wait until the browser session is authenticated",
+    "access": "write",
+    "domain": "note.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
+        "required": false,
+        "help": "Maximum seconds to wait for the user to finish login"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "site",
+      "urlname",
+      "nickname",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "note/auth.js",
+    "sourceFile": "note/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "note",
+    "name": "publish",
+    "description": "Publish a text note to note.com (or save a draft with --draft)",
+    "access": "write",
+    "domain": "note.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Note title"
+      },
+      {
+        "name": "body",
+        "type": "string",
+        "required": false,
+        "help": "Note body text (blank lines split paragraphs)"
+      },
+      {
+        "name": "tags",
+        "type": "string",
+        "required": false,
+        "help": "Hashtags, comma-separated (# optional)"
+      },
+      {
+        "name": "magazine",
+        "type": "string",
+        "required": false,
+        "help": "Magazine id(s) to file under, comma-separated"
+      },
+      {
+        "name": "images",
+        "type": "string",
+        "required": false,
+        "help": "(best-effort) in-body images: local paths and/or urls"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Save the draft but do not publish"
+      }
+    ],
+    "columns": [
+      "status",
+      "note_key",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "note/publish.js",
+    "sourceFile": "note/publish.js",
+    "navigateBefore": "https://note.com"
+  },
+  {
+    "site": "note",
+    "name": "whoami",
+    "description": "Show the current logged-in note account",
+    "access": "read",
+    "domain": "note.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "site",
+      "urlname",
+      "nickname",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "note/auth.js",
+    "sourceFile": "note/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent"
+  },
+  {
     "site": "notebooklm",
     "name": "add-source",
     "description": "Add a URL, text, or local file source to an existing NotebookLM notebook",
@@ -28349,6 +28461,181 @@
     "type": "js",
     "modulePath": "paperreview/submit.js",
     "sourceFile": "paperreview/submit.js"
+  },
+  {
+    "site": "pinterest",
+    "name": "board-create",
+    "description": "Create a new Pinterest board",
+    "access": "write",
+    "domain": "www.pinterest.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "name",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Board name"
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "required": false,
+        "help": "Board description"
+      },
+      {
+        "name": "privacy",
+        "type": "string",
+        "default": "public",
+        "required": false,
+        "help": "public | secret"
+      }
+    ],
+    "columns": [
+      "id",
+      "name",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "pinterest/boards.js",
+    "sourceFile": "pinterest/boards.js",
+    "navigateBefore": "https://www.pinterest.com"
+  },
+  {
+    "site": "pinterest",
+    "name": "boards",
+    "description": "List your Pinterest boards",
+    "access": "read",
+    "domain": "www.pinterest.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "id",
+      "name",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "pinterest/boards.js",
+    "sourceFile": "pinterest/boards.js",
+    "navigateBefore": "https://www.pinterest.com"
+  },
+  {
+    "site": "pinterest",
+    "name": "login",
+    "description": "Open pinterest login and wait until the browser session is authenticated",
+    "access": "write",
+    "domain": "www.pinterest.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
+        "required": false,
+        "help": "Maximum seconds to wait for the user to finish login"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "site",
+      "username",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "pinterest/auth.js",
+    "sourceFile": "pinterest/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "pinterest",
+    "name": "pin",
+    "description": "Create a pin on a board with an optional destination link",
+    "access": "write",
+    "domain": "www.pinterest.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Pin title"
+      },
+      {
+        "name": "image-url",
+        "type": "string",
+        "required": false,
+        "help": "Image URL to pin (required unless --image)"
+      },
+      {
+        "name": "image",
+        "type": "string",
+        "required": false,
+        "help": "(best-effort) local image file to upload"
+      },
+      {
+        "name": "board",
+        "type": "string",
+        "required": true,
+        "help": "Target board name"
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "required": false,
+        "help": "Pin description"
+      },
+      {
+        "name": "link",
+        "type": "string",
+        "required": false,
+        "help": "Destination/landing URL (defaults to the image URL)"
+      },
+      {
+        "name": "create-board",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Create the board if it does not exist"
+      }
+    ],
+    "columns": [
+      "status",
+      "pin_id",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "pinterest/publish.js",
+    "sourceFile": "pinterest/publish.js",
+    "navigateBefore": "https://www.pinterest.com"
+  },
+  {
+    "site": "pinterest",
+    "name": "whoami",
+    "description": "Show the current logged-in pinterest account",
+    "access": "read",
+    "domain": "www.pinterest.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "site",
+      "username",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "pinterest/auth.js",
+    "sourceFile": "pinterest/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent"
   },
   {
     "site": "pixiv",
@@ -35416,6 +35703,38 @@
   },
   {
     "site": "substack",
+    "name": "login",
+    "description": "Open substack login and wait until the browser session is authenticated",
+    "access": "write",
+    "domain": "substack.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
+        "required": false,
+        "help": "Maximum seconds to wait for the user to finish login"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "site",
+      "user_id",
+      "publication",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "substack/auth.js",
+    "sourceFile": "substack/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "substack",
     "name": "publication",
     "description": "获取特定 Substack Newsletter 的最新文章",
     "access": "read",
@@ -35448,6 +35767,79 @@
     "type": "js",
     "modulePath": "substack/publication.js",
     "sourceFile": "substack/publication.js",
+    "navigateBefore": "https://substack.com"
+  },
+  {
+    "site": "substack",
+    "name": "publish",
+    "description": "Publish a post to your Substack publication (or save a draft with --draft)",
+    "access": "write",
+    "domain": "substack.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "Post title"
+      },
+      {
+        "name": "body",
+        "type": "string",
+        "required": false,
+        "help": "Post body text (blank lines split paragraphs)"
+      },
+      {
+        "name": "subtitle",
+        "type": "string",
+        "required": false,
+        "help": "Optional subtitle"
+      },
+      {
+        "name": "images",
+        "type": "string",
+        "required": false,
+        "help": "Images: comma-separated local paths and/or http(s) urls"
+      },
+      {
+        "name": "audience",
+        "type": "string",
+        "default": "everyone",
+        "required": false,
+        "help": "Visibility: everyone | only_paid"
+      },
+      {
+        "name": "section",
+        "type": "string",
+        "required": false,
+        "help": "Section name to file the post under"
+      },
+      {
+        "name": "send",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Also email subscribers on publish"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Create the draft but do not publish"
+      }
+    ],
+    "columns": [
+      "status",
+      "publication",
+      "draft_id",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "substack/publish.js",
+    "sourceFile": "substack/publish.js",
     "navigateBefore": "https://substack.com"
   },
   {
@@ -35496,6 +35888,28 @@
     "type": "js",
     "modulePath": "substack/search.js",
     "sourceFile": "substack/search.js"
+  },
+  {
+    "site": "substack",
+    "name": "whoami",
+    "description": "Show the current logged-in substack account",
+    "access": "read",
+    "domain": "substack.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "site",
+      "user_id",
+      "publication",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "substack/auth.js",
+    "sourceFile": "substack/auth.js",
+    "navigateBefore": false,
+    "siteSession": "persistent"
   },
   {
     "site": "suno",
