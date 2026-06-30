@@ -17,6 +17,19 @@ import { checkLogin } from './auth.js';
 const DEFAULT_TIMEOUT_SECONDS = 300;
 const POLL_INTERVAL_MS = 3000;
 
+// 登录是用户看得见的前台窗口；一旦确认登录就在源头关掉它，别等 daemon 的 idle 超时
+// 才消失（那正是「登录完窗口不自动关闭」的体感）。尽力而为：direct-CDP / 测试 page
+// 没有 closeWindow，关窗失败也绝不能把成功的登录变成报错。
+async function closeLoginWindow(page) {
+    if (typeof page?.closeWindow === 'function') {
+        try {
+            await page.closeWindow();
+        } catch {
+            /* 窗口可能已不在；忽略 */
+        }
+    }
+}
+
 /**
  * 给走文章共享基建的平台注册一个 `login` 命令。
  *
@@ -53,12 +66,14 @@ export function registerArticleLogin(config) {
             // 已登录直接返回（checkLogin 内部会导航到 home 并探鉴权）。
             const first = await checkLogin(page, config.profile);
             if (first.isAuthenticated) {
-                return {
+                const result = {
                     status: 'already_logged_in',
                     logged_in: true,
                     user_id: first.userId || '',
                     username: first.username || '',
                 };
+                await closeLoginWindow(page);
+                return result;
             }
 
             // 未登录：打开登录页，让用户手动完成登录，再轮询登录态。
@@ -71,12 +86,14 @@ export function registerArticleLogin(config) {
                 await page.wait(Math.min(POLL_INTERVAL_MS / 1000, Math.max(0.2, remainMs / 1000)));
                 const r = await checkLogin(page, config.profile);
                 if (r.isAuthenticated) {
-                    return {
+                    const result = {
                         status: 'login_complete',
                         logged_in: true,
                         user_id: r.userId || '',
                         username: r.username || '',
                     };
+                    await closeLoginWindow(page);
+                    return result;
                 }
             }
 

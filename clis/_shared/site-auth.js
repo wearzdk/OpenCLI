@@ -20,6 +20,21 @@ async function tryProbe(config, page, phase) {
   return normalizeIdentity(config.site, await probe(page, { phase }));
 }
 
+// Login opens a *foreground* window the user interacts with. Once login is
+// confirmed, close it at the source so it doesn't linger until the daemon's idle
+// timeout — that lingering window is the "登录完窗口不自动关闭" complaint.
+// Best-effort: direct-CDP pages / tests have no closeWindow, and a failed close
+// must never turn a successful login into an error.
+async function closeLoginWindow(page) {
+  if (typeof page?.closeWindow === 'function') {
+    try {
+      await page.closeWindow();
+    } catch {
+      /* window may already be gone; ignore */
+    }
+  }
+}
+
 function authHint(config) {
   return `Run \`opencli ${config.site} login\` to open the login page, then retry.`;
 }
@@ -87,9 +102,15 @@ export function registerSiteAuthCommands(config) {
     columns: ['status', ...commandColumns(config)],
     func: async (page, kwargs) => {
       try {
-        return { status: 'already_logged_in', ...await tryProbe(config, page, 'identity') };
+        const result = { status: 'already_logged_in', ...await tryProbe(config, page, 'identity') };
+        await closeLoginWindow(page);
+        return result;
       } catch (error) {
-        if (!isAuthRequired(error)) throw error;
+        if (!isAuthRequired(error)) {
+          // 非「未登录」的真错误：也把登录窗收掉，别让它杵在那（见 closeLoginWindow 注释）。
+          await closeLoginWindow(page);
+          throw error;
+        }
       }
 
       await page.goto(config.loginUrl);
@@ -101,13 +122,19 @@ export function registerSiteAuthCommands(config) {
         await page.wait(Math.min(POLL_INTERVAL_MS / 1000, Math.max(0.2, (deadline - Date.now()) / 1000)));
         try {
           const identity = await tryProbe(config, page, 'poll');
+          await closeLoginWindow(page);
           return { status: 'login_complete', ...identity };
         } catch (error) {
-          if (!isAuthRequired(error)) throw error;
+          if (!isAuthRequired(error)) {
+            await closeLoginWindow(page);
+            throw error;
+          }
           lastAuthMessage = getErrorMessage(error);
         }
       }
 
+      // 超时（用户没在时限内完成）：同样关掉登录窗，避免失败后窗口残留。
+      await closeLoginWindow(page);
       throw new TimeoutError(
         `${config.site} login`,
         timeoutSeconds,

@@ -3,7 +3,7 @@ import { registerSiteAuthCommands } from '../_shared/site-auth.js';
 
 async function hasJdSessionCookie(page) {
   const cookies = await page.getCookies({ url: 'https://www.jd.com' });
-  const names = new Set(cookies.map(c => c.name));
+  const names = new Set(cookies.filter(c => c.value).map(c => c.name));
   return names.has('pin') || names.has('thor');
 }
 

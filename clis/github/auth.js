@@ -3,7 +3,7 @@ import { registerSiteAuthCommands } from '../_shared/site-auth.js';
 
 async function hasGithubSessionCookies(page) {
   const cookies = await page.getCookies({ url: 'https://github.com' });
-  const names = new Set(cookies.map(cookie => cookie.name));
+  const names = new Set(cookies.filter(cookie => cookie.value).map(cookie => cookie.name));
   return names.has('user_session') || names.has('dotcom_user') || names.has('logged_in');
 }
 

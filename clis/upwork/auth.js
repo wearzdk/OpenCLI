@@ -3,7 +3,7 @@ import { registerSiteAuthCommands } from '../_shared/site-auth.js';
 
 async function hasUpworkSessionCookie(page) {
   const cookies = await page.getCookies({ url: 'https://www.upwork.com' });
-  const names = new Set(cookies.map(c => c.name));
+  const names = new Set(cookies.filter(c => c.value).map(c => c.name));
   return names.has('master_access_token') || names.has('XSRF-TOKEN') && names.has('user_uid');
 }
 

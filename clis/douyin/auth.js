@@ -4,7 +4,7 @@ import { browserFetch } from './_shared/browser-fetch.js';
 
 async function hasDouyinSessionCookies(page) {
   const cookies = await page.getCookies({ url: 'https://creator.douyin.com' });
-  const names = new Set(cookies.map(cookie => cookie.name));
+  const names = new Set(cookies.filter(cookie => cookie.value).map(cookie => cookie.name));
   return names.has('sessionid') || names.has('uid_tt') || names.has('passport_csrf_token');
 }
 

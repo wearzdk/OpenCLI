@@ -3,7 +3,7 @@ import { registerSiteAuthCommands } from '../_shared/site-auth.js';
 
 async function hasNotebookLmSsoCookies(page) {
   const cookies = await page.getCookies({ url: 'https://notebooklm.google.com' });
-  const names = new Set(cookies.map(c => c.name));
+  const names = new Set(cookies.filter(c => c.value).map(c => c.name));
   return names.has('SID') && names.has('SAPISID');
 }
 

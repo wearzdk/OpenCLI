@@ -3,7 +3,7 @@ import { registerSiteAuthCommands } from '../_shared/site-auth.js';
 
 async function hasXhsSessionCookies(page) {
   const cookies = await page.getCookies({ url: 'https://creator.xiaohongshu.com' });
-  const names = new Set(cookies.map(cookie => cookie.name));
+  const names = new Set(cookies.filter(cookie => cookie.value).map(cookie => cookie.name));
   return names.has('web_session');
 }
 

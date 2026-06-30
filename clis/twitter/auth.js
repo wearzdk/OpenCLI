@@ -4,7 +4,7 @@ import { normalizeTwitterScreenName, unwrapBrowserResult } from './shared.js';
 
 async function hasTwitterSessionCookies(page) {
   const cookies = await page.getCookies({ url: 'https://x.com' });
-  const names = new Set(cookies.map(cookie => cookie.name));
+  const names = new Set(cookies.filter(cookie => cookie.value).map(cookie => cookie.name));
   return names.has('auth_token') && names.has('ct0');
 }
 

@@ -4,7 +4,7 @@ import { apiGet, getSelfUid } from './utils.js';
 
 async function hasBilibiliSessionCookies(page) {
   const cookies = await page.getCookies({ url: 'https://www.bilibili.com' });
-  const names = new Set(cookies.map(cookie => cookie.name));
+  const names = new Set(cookies.filter(cookie => cookie.value).map(cookie => cookie.name));
   return names.has('SESSDATA') && names.has('DedeUserID');
 }
 

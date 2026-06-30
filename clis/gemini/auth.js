@@ -3,7 +3,7 @@ import { registerSiteAuthCommands } from '../_shared/site-auth.js';
 
 async function hasGoogleSessionCookie(page) {
   const cookies = await page.getCookies({ url: 'https://gemini.google.com' });
-  const names = new Set(cookies.map(c => c.name));
+  const names = new Set(cookies.filter(c => c.value).map(c => c.name));
   return names.has('SID') || names.has('SAPISID') || names.has('__Secure-1PSID');
 }
 

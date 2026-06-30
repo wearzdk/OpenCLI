@@ -3,7 +3,7 @@ import { registerSiteAuthCommands } from '../_shared/site-auth.js';
 
 async function hasKimiSessionCookie(page) {
   const cookies = await page.getCookies({ url: 'https://www.kimi.com' });
-  const names = new Set(cookies.map(c => c.name));
+  const names = new Set(cookies.filter(c => c.value).map(c => c.name));
   return names.has('access_token') || names.has('refresh_token');
 }
 
