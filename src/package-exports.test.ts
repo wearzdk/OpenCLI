@@ -39,14 +39,14 @@ const ALLOWED_BARE_IMPORTS = new Set([
 ]);
 
 // 适配器可以 import 在 package.json 里**显式声明**的依赖（它们随 publishport-opencli
-// 一起 npm 安装，运行时可达）——例如 article 适配器的 markdown-it / 协议平台的
-// nostr-tools、@farcaster/core。未声明的裸 import 仍然失败（挡住手滑引入的隐式依赖）。
+// 一起 npm 安装，运行时可达）——例如 article 适配器的 markdown-it / turndown。
+// 未声明的裸 import 仍然失败（挡住手滑引入的隐式依赖）。
 const DECLARED_DEPS = (() => {
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf-8'));
   return new Set(Object.keys({ ...pkg.dependencies, ...pkg.optionalDependencies, ...pkg.peerDependencies }));
 })();
 
-/** 取裸 import 的包名（处理 scoped 包与子路径）：`nostr-tools/pure`→`nostr-tools`、`@scope/p/x`→`@scope/p`。 */
+/** 取裸 import 的包名（处理 scoped 包与子路径）：`markdown-it/lib`→`markdown-it`、`@scope/p/x`→`@scope/p`。 */
 function packageName(specifier: string): string {
   const parts = specifier.split('/');
   return specifier.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
