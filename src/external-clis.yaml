@@ -1,10 +1,3 @@
-- name: biliup
-  binary: biliup
-  package: biliup
-  description: "Bilibili 投稿/下载 CLI — 命令行视频上传(多P/分区/标签/封面/合集/上传线路)、登录、下载。投稿建议用 `bilibili upload`（自动复用浏览器登录态）；此入口给进阶用法(append/list/show)"
-  homepage: "https://github.com/biliup/biliup"
-  tags: [bilibili, video, upload, 投稿]
-
 - name: gh
   binary: gh
   description: "GitHub CLI — repos, PRs, issues, releases, gists"

@@ -3805,37 +3805,6 @@
   },
   {
     "site": "bilibili",
-    "name": "biliup-login",
-    "description": "B站 biliup 扫码登录，生成投稿用 cookie（一次性）",
-    "access": "write",
-    "strategy": "local",
-    "browser": false,
-    "args": [
-      {
-        "name": "account",
-        "type": "str",
-        "default": "default",
-        "required": false,
-        "help": "biliup 账号名（cookie 存 ~/.publishport/bilibili/<account>.json）"
-      },
-      {
-        "name": "cookie",
-        "type": "str",
-        "default": "",
-        "required": false,
-        "help": "直接指定 cookie 输出路径（覆盖 --account）"
-      }
-    ],
-    "columns": [
-      "status",
-      "cookie"
-    ],
-    "type": "js",
-    "modulePath": "bilibili/publish.js",
-    "sourceFile": "bilibili/publish.js"
-  },
-  {
-    "site": "bilibili",
     "name": "categories",
     "description": "列出 B站专栏文章分类树（id + 名称 + 父分类），供 `bilibili article --category` 取合法分类 id。优先选叶子分类（is_leaf=true）。",
     "access": "read",
@@ -4414,78 +4383,27 @@
   },
   {
     "site": "bilibili",
-    "name": "publish",
+    "name": "partitions",
     "aliases": [
-      "upload-video"
+      "tid-list"
     ],
-    "description": "投稿视频到B站（经官方 biliup；一条命令完成；需先 biliup-login）",
-    "access": "write",
-    "strategy": "local",
-    "browser": false,
-    "args": [
-      {
-        "name": "video",
-        "type": "str",
-        "required": true,
-        "positional": true,
-        "help": "视频文件路径"
-      },
-      {
-        "name": "title",
-        "type": "str",
-        "required": true,
-        "help": "稿件标题"
-      },
-      {
-        "name": "desc",
-        "type": "str",
-        "default": "",
-        "required": false,
-        "help": "稿件简介"
-      },
-      {
-        "name": "tid",
-        "type": "str",
-        "required": true,
-        "help": "分区 ID（B站 category id，如体育-足球=...）"
-      },
-      {
-        "name": "tags",
-        "type": "str",
-        "default": "",
-        "required": false,
-        "help": "标签，逗号分隔（tag1,tag2）"
-      },
-      {
-        "name": "schedule",
-        "type": "str",
-        "default": "",
-        "required": false,
-        "help": "定时发布时间（ISO8601 或 Unix 秒；不填即立即）"
-      },
-      {
-        "name": "account",
-        "type": "str",
-        "default": "default",
-        "required": false,
-        "help": "biliup 账号名（cookie 存 ~/.publishport/bilibili/<account>.json）"
-      },
-      {
-        "name": "cookie",
-        "type": "str",
-        "default": "",
-        "required": false,
-        "help": "直接指定 biliup cookie 文件路径（覆盖 --account）"
-      }
-    ],
+    "description": "列出 B站视频投稿分区（tid + 名称 + 父分区 + 简介），供 `bilibili upload --tid` 取合法分区 id。禁止臆造 tid。",
+    "access": "read",
+    "domain": "member.bilibili.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
     "columns": [
-      "status",
-      "title",
-      "tid"
+      "tid",
+      "name",
+      "parent",
+      "parent_name",
+      "desc"
     ],
     "type": "js",
-    "modulePath": "bilibili/publish.js",
-    "sourceFile": "bilibili/publish.js"
+    "modulePath": "bilibili/partitions.js",
+    "sourceFile": "bilibili/partitions.js",
+    "navigateBefore": "https://member.bilibili.com"
   },
   {
     "site": "bilibili",
@@ -4663,9 +4581,9 @@
   {
     "site": "bilibili",
     "name": "upload",
-    "description": "投稿视频到 B站（复用客户端的浏览器登录态，底层用 biliup）。默认仅 dry-run 校验，加 --execute 才真正上传。",
+    "description": "投稿视频到 B站（在真实浏览器登录态里走 web 投稿：preupload→upos 分块→add/v3）。默认仅 dry-run 校验，加 --execute 才真正上传并提交。",
     "access": "write",
-    "domain": "www.bilibili.com",
+    "domain": "member.bilibili.com",
     "strategy": "cookie",
     "browser": true,
     "args": [
@@ -4674,7 +4592,7 @@
         "type": "str",
         "required": true,
         "positional": true,
-        "help": "视频文件路径（多P 用 --more 追加）"
+        "help": "视频文件路径"
       },
       {
         "name": "title",
@@ -4683,16 +4601,16 @@
         "help": "稿件标题（默认取文件名）"
       },
       {
+        "name": "tid",
+        "type": "number",
+        "required": true,
+        "help": "分区 id（B站 typeid，必填，禁止臆造）。合法值用 `bilibili partitions` 列举后取。"
+      },
+      {
         "name": "tag",
         "type": "str",
         "required": true,
         "help": "标签，逗号分隔（B站要求至少 1 个）"
-      },
-      {
-        "name": "tid",
-        "type": "number",
-        "required": false,
-        "help": "分区 id（如 201 科学科普；不传用 biliup 默认）"
       },
       {
         "name": "desc",
@@ -4716,25 +4634,37 @@
         "name": "source",
         "type": "str",
         "required": false,
-        "help": "转载来源 URL（copyright=2 时建议填）"
+        "help": "转载来源 URL（copyright=2 时必填）"
       },
       {
-        "name": "line",
+        "name": "dynamic",
         "type": "str",
         "required": false,
-        "help": "上传线路：bda2/ws/qn/bldsa/tx/txa/bda/alia（不传自动选）"
+        "help": "同步发布的动态文案（可空）"
+      },
+      {
+        "name": "no-reprint",
+        "type": "boolean",
+        "required": false,
+        "help": "禁止转载（默认允许）"
       },
       {
         "name": "dtime",
         "type": "number",
         "required": false,
-        "help": "定时发布的 10 位 unix 时间戳"
+        "help": "定时发布的 10 位 unix 时间戳（可空=立即）"
       },
       {
-        "name": "more",
+        "name": "line",
         "type": "str",
         "required": false,
-        "help": "追加的视频文件（多P），逗号分隔多个路径"
+        "help": "上传线路：bda2/bldsa/qn/ws（默认 bda2）"
+      },
+      {
+        "name": "concurrency",
+        "type": "number",
+        "required": false,
+        "help": "分块并发数（默认 3）"
       },
       {
         "name": "execute",
@@ -4746,13 +4676,13 @@
     "columns": [
       "status",
       "title",
-      "files",
-      "output"
+      "bvid",
+      "url"
     ],
     "type": "js",
     "modulePath": "bilibili/upload.js",
     "sourceFile": "bilibili/upload.js",
-    "navigateBefore": "https://www.bilibili.com"
+    "navigateBefore": "https://member.bilibili.com"
   },
   {
     "site": "bilibili",

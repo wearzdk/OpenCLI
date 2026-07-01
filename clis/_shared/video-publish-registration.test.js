@@ -5,7 +5,7 @@ import '../kuaishou/publish.js';
 import '../tiktok/publish.js';
 import '../youtube/publish.js';
 import '../baijiahao/publish.js';
-import '../bilibili/publish.js';
+import '../bilibili/upload.js';
 
 function find(site, name) {
   return [...getRegistry().values()].find((c) => c.site === site && c.name === name);
@@ -40,11 +40,10 @@ describe('video publish adapters registration', () => {
     expect(cmd.args.map((a) => a.name)).toEqual(expect.arrayContaining(['video', 'title', 'schedule']));
   });
 
-  it('registers bilibili publish (non-browser) + biliup-login', () => {
-    const cmd = find('bilibili', 'publish');
+  it('registers bilibili upload (browser-native web 投稿)', () => {
+    const cmd = find('bilibili', 'upload');
     expect(cmd).toBeDefined();
-    expect(cmd.browser).toBe(false);
-    expect(cmd.args.map((a) => a.name)).toEqual(expect.arrayContaining(['video', 'title', 'tid', 'tags', 'schedule']));
-    expect(find('bilibili', 'biliup-login')).toBeDefined();
+    expect(cmd.browser).toBe(true);
+    expect(cmd.args.map((a) => a.name)).toEqual(expect.arrayContaining(['file', 'title', 'tid', 'tag']));
   });
 });

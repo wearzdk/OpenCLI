@@ -1,81 +1,206 @@
 /**
- * Bilibili video upload (投稿) — bridges the browser-login bilibili session to the
- * external `biliup` CLI (https://github.com/biliup/biliup, binary `biliup`).
+ * Bilibili 视频投稿（web 投稿）—— 完全在「真实浏览器登录态」里执行，复用客户端浏览器会话。
  *
- * Design: reuse the SAME browser cookies that `bilibili login` / `auth status`
- * already manage — no second login realm. We read SESSDATA / bili_jct / DedeUserID
- * from the live browser session, materialise them into biliup's `cookies.json`
- * credential schema, then shell out to `biliup upload`. biliup owns the hard parts
- * (upload line selection, chunked upload, retry, submit); we stay a thin bridge.
+ * 不再桥接外部 biliup 二进制（biliup 需 app access_token，web cookie 登录拿不到，已废弃）。
+ * 忠实移植上游开源 Nemo2011/bilibili-api 的 `video_uploader.py`（纯 SESSDATA+bili_jct，无 app
+ * token）：preupload → upos 分块上传 → /x/vu/web/add/v3 提交。接口/参数/字段 1:1 抄上游，不自行逆向。
+ *
+ * 为什么跑在浏览器里：环境绝对真实（住宅 IP/真实登录态/指纹，最强反风控）；upos 分块 PUT 跨域到
+ * upos-*.bilivideo.com，B站官方 web 投稿页本就这么传、对 member.bilibili.com 放行了 CORS，真实页面里
+ * 天然可用；SESSDATA 是 HttpOnly，credentials:'include' 自动带。
+ *
+ * 编排模型（关键，踩坑得来）：
+ *   - opencli 浏览器会话在 **Node 侧长时间不发 evaluate（空闲数秒）时，活动标签会漂移到 data: 空白页**，
+ *     window 全局随之清空。故：① 绝不把上传状态存 window 全局；② 绝不在步骤间 sleep。
+ *   - 每步都是**自包含的短 evaluate**（把整段函数 .toString() 注进去，只吃传入的 a 参数 + 浏览器全局）；
+ *     协议状态（upload_id / auth / url / 已传分块）全部**存在 Node 侧**，逐块回传。
+ *   - 视频字节：CDP `setFileInput` 从磁盘塞进隐藏 <input>，各步 evaluate 现读 `input.files[0]`（DOM
+ *     节点在不发生导航时一直在，不依赖 window）。分块 PUT 一块一次 evaluate、背靠背连发（无空闲→不漂移），
+ *     每次 evaluate 远小于 30s（CDP_SEND_TIMEOUT），因此**任意大小的视频都不受单次 evaluate 上限约束**。
+ *
+ * 上游出处（逐函数核对 video_uploader.py）：_preupload / _get_upload_url / _upload_chunk /
+ *   _complete_page / VideoMeta.__dict__ + _submit / module upload_cover；线路常量 data/video_uploader_lines.json。
  */
-import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { cli, Strategy } from '@jackwener/opencli/registry';
 import { ArgumentError, AuthRequiredError, CommandExecutionError } from '@jackwener/opencli/errors';
+import { resolveVideoFile, resolveImageFile } from '../_shared/video-publish.js';
 
-// Override for tests / non-standard installs; the desktop runtime puts `biliup` on PATH.
-const BILIUP_BIN = process.env.PUBBRIDGE_BILIUP_BIN || 'biliup';
-// biliup's upload submit authenticates with the web cookies (SESSDATA + bili_jct CSRF);
-// DedeUserID identifies the account. These three are the minimum a web-cookie login needs.
+// 上游 data/video_uploader_lines.json（verbatim）。默认 bda2（百度云）。
+const LINES = {
+  bda2: { os: 'upos', upcdn: 'bda2', probe_version: 20221109 },
+  bldsa: { os: 'upos', upcdn: 'bldsa', probe_version: 20221109 },
+  qn: { os: 'upos', upcdn: 'qn', probe_version: 20221109 },
+  ws: { os: 'upos', upcdn: 'ws', probe_version: 20221109 },
+};
+const DEFAULT_LINE = 'bda2';
+
+// 登录态最少需要的三枚 cookie（SESSDATA 是 HttpOnly，CDP getCookies 仍可读到）。
 const REQUIRED_COOKIES = ['SESSDATA', 'bili_jct', 'DedeUserID'];
 
-/**
- * Build biliup's `cookies.json` credential from browser cookies.
- * biliup reads `cookie_info.cookies[].name/value` (see biliup-rs credential.rs
- * `set_cookie`) and pulls SESSDATA / bili_jct from there for the web upload API.
- * @param {Array<{name?: string, value?: unknown}>} cookies from page.getCookies
- */
-export function buildBiliupCredential(cookies) {
-  const jar = new Map();
-  for (const c of Array.isArray(cookies) ? cookies : []) {
-    if (c && typeof c.name === 'string') jar.set(c.name, String(c.value ?? ''));
-  }
-  const missing = REQUIRED_COOKIES.filter((n) => !jar.get(n));
-  if (missing.length) {
-    throw new AuthRequiredError(
-      'www.bilibili.com',
-      `缺少 B站登录 cookie（${missing.join(', ')}）。请先在客户端登录哔哩哔哩。`,
-    );
-  }
-  const cookieList = [...jar.entries()].map(([name, value]) => ({ name, value }));
-  return {
-    cookie_info: { cookies: cookieList },
-    // biliup keeps an SSO list for cross-domain cookie sync; harmless when present.
-    sso: [
-      'https://passport.bilibili.com/api/v2/sso',
-      'https://passport.biligame.com/api/v2/sso',
-      'https://passport.bigfun.cn/api/v2/sso',
-    ],
-    // No app access_token from a web login; web submit doesn't need it. Keep the
-    // shape valid so biliup can deserialise the file.
-    token_info: {
-      mid: Number(jar.get('DedeUserID')) || 0,
-      access_token: '',
-      refresh_token: '',
-      expires_in: 0,
-    },
-    platform: 'web',
-  };
+const UPLOAD_PAGE = 'https://member.bilibili.com/platform/home';
+const HIDDEN_INPUT_ID = '__pp_bili_video_input';
+
+/* eslint-disable */
+// 以下函数仅被 .toString() 注入真实页面执行，引用的 window/document/fetch 都是浏览器全局；Node 里永不调用。
+
+// preupload GET 拿 endpoint/auth/chunk_size/biz_id → POST 取 upload_id。返回给 Node 侧保存。
+function PP_PREUPLOAD(a) {
+  var inp = document.getElementById(a.inputId);
+  if (!inp || !inp.files || !inp.files[0]) return { error: '文件未就绪（input 为空）' };
+  var file = inp.files[0];
+  var size = file.size;
+  var line = a.line;
+  return (async function () {
+    try {
+      var q = new URLSearchParams({
+        profile: 'ugcfx/bup', name: file.name, size: String(size), r: line.os, ssl: '0',
+        version: '2.14.0', build: '2100400', upcdn: line.upcdn, probe_version: String(line.probe_version),
+      });
+      var pre = await (await fetch('https://member.bilibili.com/preupload?' + q.toString(), {
+        credentials: 'include', headers: { Referer: 'https://www.bilibili.com' },
+      })).json();
+      if (pre.OK !== 1) return { error: 'preupload 失败：' + JSON.stringify(pre) };
+      var url = 'https:' + pre.endpoint + '/' + String(pre.upos_uri).replace(/^upos:\/\//, '');
+      var iq = new URLSearchParams({
+        uploads: '', output: 'json', profile: 'ugcfx/bup',
+        filesize: String(size), partsize: String(pre.chunk_size), biz_id: String(pre.biz_id),
+      });
+      var ij = await (await fetch(url + '?' + iq.toString(), { method: 'POST', headers: { 'x-upos-auth': pre.auth } })).json();
+      if (ij.OK !== 1) return { error: '获取 upload_id 失败：' + JSON.stringify(ij) };
+      var chunkCount = Math.max(1, Math.ceil(size / pre.chunk_size));
+      return {
+        url: url, auth: pre.auth, uploadId: ij.upload_id, chunkSize: pre.chunk_size,
+        bizId: pre.biz_id, size: size, name: file.name, total: chunkCount,
+      };
+    } catch (e) { return { error: 'preupload 异常：' + String((e && e.message) || e) }; }
+  })();
 }
 
-function writeCredentialFile(cred) {
-  const dir = path.join(os.homedir(), '.publishport', 'biliup');
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const file = path.join(dir, 'cookies.json');
-  // Contains SESSDATA — keep it user-private.
-  fs.writeFileSync(file, JSON.stringify(cred), { mode: 0o600 });
-  return file;
+// 上传单个分块（_upload_chunk 的 params verbatim）。一块一次 evaluate，背靠背连发。
+function PP_PUT_CHUNK(a) {
+  var inp = document.getElementById(a.inputId);
+  if (!inp || !inp.files || !inp.files[0]) return { ok: false, error: '文件丢失（页面可能已导航）' };
+  var file = inp.files[0];
+  var off = a.idx * a.chunkSize;
+  var blob = file.slice(off, Math.min(off + a.chunkSize, a.size));
+  var real = blob.size;
+  var p = new URLSearchParams({
+    partNumber: String(a.idx + 1), uploadId: String(a.uploadId), chunk: String(a.idx),
+    chunks: String(a.total), size: String(real), start: String(off), end: String(off + real), total: String(a.size),
+  });
+  return (async function () {
+    for (var attempt = 0; attempt < 5; attempt++) {
+      try {
+        var rr = await fetch(a.url + '?' + p.toString(), { method: 'PUT', headers: { 'x-upos-auth': a.auth }, body: blob });
+        if (rr.status < 400) {
+          var t = await rr.text();
+          if (t === 'MULTIPART_PUT_SUCCESS' || t === '') return { ok: true };
+        }
+      } catch (e) {}
+      await new Promise(function (rs) { setTimeout(rs, 800 * (attempt + 1)); });
+    }
+    return { ok: false, error: '分块 ' + a.idx + ' 多次重试仍失败' };
+  })();
 }
 
-function resolveFiles(kwargs) {
-  const files = [String(kwargs.file ?? '').trim()];
-  for (const extra of String(kwargs.more ?? '').split(',')) {
-    const p = extra.trim();
-    if (p) files.push(p);
+// _complete_page：合并分块，取 filename/cid。
+function PP_COMPLETE(a) {
+  var parts = [];
+  for (var x = 1; x <= a.total; x++) parts.push({ partNumber: x, eTag: 'etag' });
+  var cq = new URLSearchParams({
+    output: 'json', name: a.name, profile: 'ugcfx/bup', uploadId: String(a.uploadId), biz_id: String(a.bizId),
+  });
+  return (async function () {
+    try {
+      var cj = await (await fetch(a.url + '?' + cq.toString(), {
+        method: 'POST', headers: { 'x-upos-auth': a.auth, 'content-type': 'application/json; charset=UTF-8' },
+        body: JSON.stringify({ parts: parts }),
+      })).json();
+      if (cj.OK !== 1) return { error: 'complete 失败：' + JSON.stringify(cj) };
+      var filename = String(cj.key).replace(/^\//, '').replace(/\.[^.]+$/, '');
+      return { filename: filename, cid: a.bizId };
+    } catch (e) { return { error: 'complete 异常：' + String((e && e.message) || e) }; }
+  })();
+}
+
+// upload_cover：form-encoded，cover 为 data URI，附 csrf；返回 data.url。
+function PP_COVER(a) {
+  return (async function () {
+    var m = document.cookie.match(/(?:^|;\s*)bili_jct=([^;]+)/);
+    if (!m) return { error: '未找到 bili_jct CSRF token' };
+    var csrf = decodeURIComponent(m[1]);
+    try {
+      var body = new URLSearchParams();
+      body.append('cover', a.dataUri);
+      body.append('csrf', csrf);
+      var j = await (await fetch('https://member.bilibili.com/x/vu/web/cover/up', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString(),
+      })).json();
+      if (!j || j.code !== 0 || !j.data || !j.data.url) return { error: '封面上传失败：' + (j && j.message ? j.message : JSON.stringify(j)) };
+      return { url: j.data.url };
+    } catch (e) { return { error: '封面上传异常：' + String((e && e.message) || e) }; }
+  })();
+}
+
+// _submit：add/v3，csrf 同时在 query 和 body；json_body。
+function PP_SUBMIT(a) {
+  return (async function () {
+    var m = document.cookie.match(/(?:^|;\s*)bili_jct=([^;]+)/);
+    if (!m) return { error: '未找到 bili_jct CSRF token' };
+    var csrf = decodeURIComponent(m[1]);
+    var meta = a.meta;
+    meta.csrf = csrf;
+    try {
+      var r = await fetch('https://member.bilibili.com/x/vu/web/add/v3?csrf=' + encodeURIComponent(csrf) + '&t=' + Date.now(), {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json;charset=UTF-8' }, body: JSON.stringify(meta),
+      });
+      var j = await r.json();
+      if (!j || j.code !== 0) return { error: 'add/v3 提交失败：' + (j && j.message ? j.message : '') + '（code=' + (j && j.code) + ' status=' + r.status + '）' };
+      return { bvid: j.data && j.data.bvid, aid: j.data && j.data.aid };
+    } catch (e) { return { error: 'add/v3 异常：' + String((e && e.message) || e) }; }
+  })();
+}
+/* eslint-enable */
+
+const callInPage = (page, fn, a) => page.evaluateWithArgs(`(${fn.toString()})(a)`, { a });
+
+/** 读取本地图片为 data URI（封面用，浏览器侧无法读本地盘，故在 Node 侧编码后传入）。 */
+function imageToDataUri(file) {
+  const abs = resolveImageFile(file);
+  const ext = path.extname(abs).toLowerCase();
+  const mime =
+    ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : ext === '.bmp' ? 'image/bmp' : 'image/jpeg';
+  const b64 = fs.readFileSync(abs).toString('base64');
+  return `data:${mime};base64,${b64}`;
+}
+
+/** 确认页面真的落在 member.bilibili.com 且登录态可用，返回 cookie map。 */
+async function ensureLoggedInMember(page) {
+  for (let i = 0; i < 8; i++) {
+    await page.goto(UPLOAD_PAGE);
+    await page.wait({ time: 1 });
+    let href = '';
+    try {
+      href = String((await page.evaluate('location.href')) || '');
+    } catch {
+      href = '';
+    }
+    if (/^https?:\/\/member\.bilibili\.com\//.test(href)) {
+      const cookies = await page.getCookies({ url: 'https://member.bilibili.com' });
+      const jar = new Map();
+      for (const c of Array.isArray(cookies) ? cookies : []) {
+        if (c && typeof c.name === 'string') jar.set(c.name, String(c.value ?? ''));
+      }
+      const missing = REQUIRED_COOKIES.filter((n) => !jar.get(n));
+      if (!missing.length) return jar;
+      throw new AuthRequiredError('member.bilibili.com', `缺少 B站登录 cookie（${missing.join(', ')}）。请先在客户端登录哔哩哔哩。`);
+    }
   }
-  return files.filter(Boolean);
+  throw new AuthRequiredError('member.bilibili.com', '无法进入 B站创作中心（可能未登录或被风控）。请先在客户端登录哔哩哔哩。');
 }
 
 cli({
@@ -83,36 +208,33 @@ cli({
   name: 'upload',
   access: 'write',
   description:
-    '投稿视频到 B站（复用客户端的浏览器登录态，底层用 biliup）。默认仅 dry-run 校验，加 --execute 才真正上传。',
-  domain: 'www.bilibili.com',
+    '投稿视频到 B站（在真实浏览器登录态里走 web 投稿：preupload→upos 分块→add/v3）。默认仅 dry-run 校验，加 --execute 才真正上传并提交。',
+  domain: 'member.bilibili.com',
   strategy: Strategy.COOKIE,
   browser: true,
   args: [
-    { name: 'file', required: true, positional: true, help: '视频文件路径（多P 用 --more 追加）' },
+    { name: 'file', required: true, positional: true, help: '视频文件路径' },
     { name: 'title', help: '稿件标题（默认取文件名）' },
+    { name: 'tid', type: 'number', required: true, help: '分区 id（B站 typeid，必填，禁止臆造）。合法值用 `bilibili partitions` 列举后取。' },
     { name: 'tag', required: true, help: '标签，逗号分隔（B站要求至少 1 个）' },
-    { name: 'tid', type: 'number', help: '分区 id（如 201 科学科普；不传用 biliup 默认）' },
     { name: 'desc', help: '简介' },
     { name: 'cover', help: '封面图片路径（不传由 B站自动截取）' },
     { name: 'copyright', type: 'number', help: '1=自制 2=转载（默认 1）' },
-    { name: 'source', help: '转载来源 URL（copyright=2 时建议填）' },
-    { name: 'line', help: '上传线路：bda2/ws/qn/bldsa/tx/txa/bda/alia（不传自动选）' },
-    { name: 'dtime', type: 'number', help: '定时发布的 10 位 unix 时间戳' },
-    { name: 'more', help: '追加的视频文件（多P），逗号分隔多个路径' },
+    { name: 'source', help: '转载来源 URL（copyright=2 时必填）' },
+    { name: 'dynamic', help: '同步发布的动态文案（可空）' },
+    { name: 'no-reprint', type: 'boolean', help: '禁止转载（默认允许）' },
+    { name: 'dtime', type: 'number', help: '定时发布的 10 位 unix 时间戳（可空=立即）' },
+    { name: 'line', help: `上传线路：${Object.keys(LINES).join('/')}（默认 ${DEFAULT_LINE}）` },
+    { name: 'concurrency', type: 'number', help: '分块并发数（默认 3）' },
     { name: 'execute', type: 'boolean', help: '真正投稿；不带则只做 dry-run 校验' },
   ],
-  columns: ['status', 'title', 'files', 'output'],
+  columns: ['status', 'title', 'bvid', 'url'],
   func: async (page, kwargs) => {
     if (!page) throw new CommandExecutionError('bilibili upload 需要浏览器会话');
 
-    const files = resolveFiles(kwargs);
-    if (!files.length) throw new ArgumentError('至少提供一个视频文件');
-    for (const f of files) {
-      if (!fs.existsSync(f)) throw new ArgumentError(`视频文件不存在: ${f}`);
-    }
-    if (kwargs.cover && !fs.existsSync(String(kwargs.cover))) {
-      throw new ArgumentError(`封面文件不存在: ${kwargs.cover}`);
-    }
+    // ── 参数校验（缺必填即抛 typed error，绝不 fallback 默认值）────────────────
+    const videoPath = resolveVideoFile(String(kwargs.file ?? ''));
+    const title = String(kwargs.title ?? '').trim() || path.basename(videoPath).replace(/\.[^.]+$/, '');
 
     const tags = String(kwargs.tag ?? '')
       .split(',')
@@ -120,43 +242,122 @@ cli({
       .filter(Boolean);
     if (!tags.length) throw new ArgumentError('B站投稿至少需要 1 个标签，用 --tag 传（逗号分隔）');
 
-    const title = String(kwargs.title ?? '').trim() || path.basename(files[0]).replace(/\.[^.]+$/, '');
+    if (kwargs.tid == null || kwargs.tid === '' || !Number.isFinite(Number(kwargs.tid))) {
+      throw new ArgumentError('必须用 --tid 指定分区 id（数字）。合法值用 `bilibili partitions` 列举，禁止臆造。');
+    }
+    const tid = Number(kwargs.tid);
 
-    // Reuse the existing browser login: export cookies → biliup credential.
-    const cred = buildBiliupCredential(await page.getCookies({ url: 'https://www.bilibili.com' }));
+    const copyright = kwargs.copyright != null && kwargs.copyright !== '' ? Number(kwargs.copyright) : 1;
+    if (copyright !== 1 && copyright !== 2) throw new ArgumentError('--copyright 只能是 1(自制) 或 2(转载)');
+    const source = String(kwargs.source ?? '').trim();
+    if (copyright === 2 && !source) throw new ArgumentError('转载（copyright=2）必须用 --source 提供转载来源');
+
+    if (kwargs.cover) resolveImageFile(String(kwargs.cover)); // 提前校验封面存在/格式
+
+    const lineKey = String(kwargs.line ?? DEFAULT_LINE);
+    const line = LINES[lineKey];
+    if (!line) throw new ArgumentError(`未知上传线路「${lineKey}」，可选：${Object.keys(LINES).join('/')}`);
+
+    const concurrency = kwargs.concurrency != null && kwargs.concurrency !== '' ? Number(kwargs.concurrency) : 3;
+
+    // ── 登录态确认（真实浏览器，member.bilibili.com 源）──────────────────────
+    await ensureLoggedInMember(page);
 
     if (!kwargs.execute) {
       return {
         status: 'dry-run',
         title,
-        files: files.join(', '),
-        output: `校验通过：登录态有效、${files.length} 个文件就绪、标签 [${tags.join(', ')}]。加 --execute 真正投稿。`,
+        bvid: '',
+        url: `校验通过：登录态有效、视频就绪、分区 ${tid}、标签 [${tags.join(', ')}]、版权 ${copyright === 1 ? '自制' : '转载'}。加 --execute 真正投稿。`,
       };
     }
 
-    const credFile = writeCredentialFile(cred);
-    const args = ['-u', credFile, 'upload', ...files, '--title', title, '--tag', tags.join(',')];
-    if (kwargs.desc) args.push('--desc', String(kwargs.desc));
-    if (kwargs.tid != null && kwargs.tid !== '') args.push('--tid', String(kwargs.tid));
-    if (kwargs.cover) args.push('--cover', String(kwargs.cover));
-    if (kwargs.copyright != null && kwargs.copyright !== '') args.push('--copyright', String(kwargs.copyright));
-    if (kwargs.source) args.push('--source', String(kwargs.source));
-    if (kwargs.line) args.push('--line', String(kwargs.line));
-    if (kwargs.dtime != null && kwargs.dtime !== '') args.push('--dtime', String(kwargs.dtime));
+    // ── 1) 注入隐藏 input + CDP 把本地视频塞进去 ──────────────────────────────
+    if (!page.setFileInput) {
+      throw new CommandExecutionError('浏览器扩展不支持 CDP 文件上传（set-file-input），无法上传视频；请升级 PublishPort 客户端/扩展');
+    }
+    await page.evaluate(
+      `(() => { var id=${JSON.stringify(HIDDEN_INPUT_ID)}; var el=document.getElementById(id); if(!el){ el=document.createElement('input'); el.type='file'; el.id=id; el.style.cssText='position:fixed;left:-9999px;top:0;'; document.body.appendChild(el);} el.value=''; return true; })()`,
+    );
+    await page.setFileInput([videoPath], `#${HIDDEN_INPUT_ID}`);
 
-    const res = spawnSync(BILIUP_BIN, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-    if (res.error) {
-      if (res.error.code === 'ENOENT') {
-        throw new CommandExecutionError(
-          `未找到 biliup 二进制（${BILIUP_BIN}）。客户端运行时应已自动安装；也可设 PUBBRIDGE_BILIUP_BIN 指向可执行文件。`,
-        );
-      }
-      throw new CommandExecutionError(`调用 biliup 失败: ${res.error.message}`);
+    // ── 2) preupload + 取 upload_id（状态存 Node 侧）──────────────────────────
+    const pre = await callInPage(page, PP_PREUPLOAD, { inputId: HIDDEN_INPUT_ID, line });
+    if (!pre || pre.error) throw new CommandExecutionError(`B站 preupload 失败：${(pre && pre.error) || '无返回'}`);
+
+    // ── 3) 分块上传：一块一次短 evaluate，背靠背连发（无空闲→标签不漂移，且每次远小于 30s）──
+    for (let i = 0; i < pre.total; i++) {
+      const r = await callInPage(page, PP_PUT_CHUNK, {
+        inputId: HIDDEN_INPUT_ID,
+        url: pre.url,
+        auth: pre.auth,
+        uploadId: pre.uploadId,
+        idx: i,
+        total: pre.total,
+        size: pre.size,
+        chunkSize: pre.chunkSize,
+      });
+      if (!r || !r.ok) throw new CommandExecutionError(`B站分块上传失败（${i + 1}/${pre.total}）：${(r && r.error) || '无返回'}`);
     }
-    const out = `${res.stdout ?? ''}${res.stderr ? `\n${res.stderr}` : ''}`.trim();
-    if (res.status !== 0) {
-      throw new CommandExecutionError(`biliup 投稿失败（exit ${res.status}）:\n${out}`);
+
+    // ── 4) 合并分块 → filename/cid ───────────────────────────────────────────
+    const comp = await callInPage(page, PP_COMPLETE, {
+      url: pre.url,
+      auth: pre.auth,
+      uploadId: pre.uploadId,
+      bizId: pre.bizId,
+      name: pre.name,
+      total: pre.total,
+    });
+    if (!comp || comp.error || !comp.filename) throw new CommandExecutionError(`B站 complete 失败：${(comp && comp.error) || '未拿到 filename'}`);
+
+    // ── 5) 封面（可选）──────────────────────────────────────────────────────
+    let coverUrl = '';
+    if (kwargs.cover) {
+      const dataUri = imageToDataUri(String(kwargs.cover));
+      const cov = await callInPage(page, PP_COVER, { dataUri });
+      if (!cov || cov.error || !cov.url) throw new CommandExecutionError(`B站封面上传失败：${(cov && cov.error) || '未拿到 url'}`);
+      coverUrl = cov.url;
     }
-    return { status: 'uploaded', title, files: files.join(', '), output: out };
+
+    // ── 6) 构造 add/v3 meta（对应 VideoMeta.__dict__，仅保留有值字段+上游常量）并提交 ──
+    const meta = {
+      title,
+      copyright,
+      tid,
+      tag: tags.join(','),
+      desc: String(kwargs.desc ?? ''),
+      desc_format_id: 9999,
+      recreate: -1,
+      dynamic: String(kwargs.dynamic ?? ''),
+      interactive: 0,
+      act_reserve_create: 0,
+      no_disturbance: 0,
+      adorder_type: 9,
+      no_reprint: kwargs['no-reprint'] ? 1 : 0,
+      subtitle: { open: 0, lan: '' },
+      dolby: 0,
+      lossless_music: 0,
+      up_selection_reply: false,
+      up_close_reply: false,
+      up_close_danmu: false,
+      web_os: 1,
+      watermark: { state: 0 },
+      cover: coverUrl,
+      videos: [{ title, desc: '', filename: comp.filename, cid: comp.cid }],
+    };
+    if (copyright === 2) meta.source = source;
+    if (kwargs.dtime != null && kwargs.dtime !== '') meta.dtime = Number(kwargs.dtime);
+
+    const sub = await callInPage(page, PP_SUBMIT, { meta });
+    if (!sub || sub.error) throw new CommandExecutionError(`B站 ${(sub && sub.error) || 'add/v3 无返回'}`);
+    const bvid = sub.bvid ? String(sub.bvid) : '';
+
+    return {
+      status: kwargs.dtime ? '✅ 定时投稿已提交' : '✅ 投稿成功',
+      title,
+      bvid,
+      url: bvid ? `https://www.bilibili.com/video/${bvid}` : '（已提交，稍后在创作中心查看）',
+    };
   },
 });

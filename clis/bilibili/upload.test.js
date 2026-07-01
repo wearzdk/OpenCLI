@@ -1,104 +1,88 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ArgumentError, AuthRequiredError, CommandExecutionError } from '@jackwener/opencli/errors';
-
-const { mockSpawnSync } = vi.hoisted(() => ({ mockSpawnSync: vi.fn() }));
-vi.mock('node:child_process', async (importOriginal) => ({
-    ...(await importOriginal()),
-    spawnSync: mockSpawnSync,
-}));
+import { ArgumentError, AuthRequiredError } from '@jackwener/opencli/errors';
 
 import { getRegistry } from '@jackwener/opencli/registry';
 import './upload.js';
-import { buildBiliupCredential } from './upload.js';
 
 const command = getRegistry().get('bilibili/upload');
 
-// A real temp video file so the existsSync guard passes.
+// 真实临时视频文件，让 resolveVideoFile 的 existsSync/扩展名校验通过。
 const tmpVideo = path.join(os.tmpdir(), `pp-upload-test-${process.pid}.mp4`);
-fs.writeFileSync(tmpVideo, 'fake');
+fs.writeFileSync(tmpVideo, 'fake-bytes');
 afterAll(() => fs.rmSync(tmpVideo, { force: true }));
 
-const validCookies = [
-    { name: 'SESSDATA', value: 'sess-xxx' },
-    { name: 'bili_jct', value: 'jct-yyy' },
-    { name: 'DedeUserID', value: '12345' },
-    { name: 'b_nut', value: 'noise' },
+const LOGGED_IN = [
+  { name: 'SESSDATA', value: 'sess-xxx' },
+  { name: 'bili_jct', value: 'jct-yyy' },
+  { name: 'DedeUserID', value: '243892009' },
+  { name: 'buvid3', value: 'noise' },
 ];
-const pageWith = (cookies) => ({ getCookies: vi.fn(async () => cookies) });
 
-beforeEach(() => mockSpawnSync.mockReset());
+// 模拟一个已登录、停留在 member.bilibili.com 的 page。dry-run 路径只用到 goto/wait/evaluate/getCookies。
+function mockPage(cookies = LOGGED_IN) {
+  return {
+    goto: vi.fn(async () => {}),
+    wait: vi.fn(async () => {}),
+    evaluate: vi.fn(async (js) => {
+      if (typeof js === 'string' && js.includes('location.href')) return 'https://member.bilibili.com/platform/home';
+      return undefined;
+    }),
+    getCookies: vi.fn(async () => cookies),
+  };
+}
 
-describe('buildBiliupCredential', () => {
-    it('maps browser cookies into biliup cookies.json schema', () => {
-        const cred = buildBiliupCredential(validCookies);
-        expect(cred.cookie_info.cookies).toContainEqual({ name: 'SESSDATA', value: 'sess-xxx' });
-        expect(cred.cookie_info.cookies).toContainEqual({ name: 'bili_jct', value: 'jct-yyy' });
-        expect(cred.token_info.mid).toBe(12345);
-        expect(cred.platform).toBe('web');
-    });
+describe('bilibili upload —— 参数校验', () => {
+  it('requires at least one tag', async () => {
+    await expect(command.func(mockPage(), { file: tmpVideo, tid: 21, tag: '  ' })).rejects.toThrow(ArgumentError);
+  });
 
-    it('throws AuthRequiredError when a required cookie is missing', () => {
-        expect(() => buildBiliupCredential([{ name: 'SESSDATA', value: 'x' }])).toThrow(AuthRequiredError);
-    });
+  it('requires a numeric --tid (no fallback)', async () => {
+    await expect(command.func(mockPage(), { file: tmpVideo, tag: 'a' })).rejects.toThrow(/tid/);
+  });
+
+  it('rejects a non-existent video file', async () => {
+    await expect(command.func(mockPage(), { file: '/no/such.mp4', tid: 21, tag: 'a' })).rejects.toThrow(/不存在/);
+  });
+
+  it('rejects copyright=2 without --source', async () => {
+    await expect(
+      command.func(mockPage(), { file: tmpVideo, tid: 21, tag: 'a', copyright: 2 }),
+    ).rejects.toThrow(/转载/);
+  });
+
+  it('rejects an unknown upload line', async () => {
+    await expect(
+      command.func(mockPage(), { file: tmpVideo, tid: 21, tag: 'a', line: 'nope' }),
+    ).rejects.toThrow(/线路/);
+  });
 });
 
-describe('bilibili upload', () => {
-    it('refuses to upload without --execute (dry-run), never spawning biliup', async () => {
-        const out = await command.func(pageWith(validCookies), { file: tmpVideo, tag: 'a,b' });
-        expect(out.status).toBe('dry-run');
-        expect(mockSpawnSync).not.toHaveBeenCalled();
-    });
+describe('bilibili upload —— 登录态', () => {
+  it('surfaces a not-logged-in browser as AuthRequiredError', async () => {
+    await expect(
+      command.func(mockPage([{ name: 'buvid3', value: 'x' }]), { file: tmpVideo, tid: 21, tag: 'a', execute: true }),
+    ).rejects.toThrow(AuthRequiredError);
+  });
+});
 
-    it('requires at least one tag', async () => {
-        await expect(command.func(pageWith(validCookies), { file: tmpVideo, tag: '  ' })).rejects.toThrow(
-            ArgumentError,
-        );
-    });
+describe('bilibili upload —— dry-run', () => {
+  it('validates without --execute and never touches the upload pipeline', async () => {
+    const page = mockPage();
+    const out = await command.func(page, { file: tmpVideo, tid: 21, tag: 'tech, ai', title: 'Hello' });
+    expect(out.status).toBe('dry-run');
+    expect(out.title).toBe('Hello');
+    // dry-run 不应注入运行时 / 启动上传。
+    const evalCalls = page.evaluate.mock.calls.map((c) => String(c[0]));
+    expect(evalCalls.some((s) => s.includes('startUpload'))).toBe(false);
+    expect(evalCalls.some((s) => s.includes('__ppbili'))).toBe(false);
+  });
 
-    it('rejects a non-existent video file', async () => {
-        await expect(command.func(pageWith(validCookies), { file: '/no/such.mp4', tag: 'a' })).rejects.toThrow(
-            /不存在/,
-        );
-    });
-
-    it('surfaces a not-logged-in browser as AuthRequiredError', async () => {
-        await expect(command.func(pageWith([]), { file: tmpVideo, tag: 'a', execute: true })).rejects.toThrow(
-            AuthRequiredError,
-        );
-    });
-
-    it('shells out to biliup with mapped flags on --execute', async () => {
-        mockSpawnSync.mockReturnValue({ status: 0, stdout: 'BV1abc done', stderr: '' });
-        const out = await command.func(pageWith(validCookies), {
-            file: tmpVideo,
-            tag: 'tech, ai',
-            title: 'Hello',
-            tid: 201,
-            desc: 'd',
-            execute: true,
-        });
-        expect(out.status).toBe('uploaded');
-        const [bin, args] = mockSpawnSync.mock.calls[0];
-        expect(bin).toBe('biliup');
-        expect(args).toContain('upload');
-        expect(args).toContain(tmpVideo);
-        expect(args).toEqual(expect.arrayContaining(['--title', 'Hello', '--tag', 'tech,ai', '--tid', '201']));
-    });
-
-    it('maps a non-zero biliup exit into CommandExecutionError', async () => {
-        mockSpawnSync.mockReturnValue({ status: 1, stdout: '', stderr: 'boom' });
-        await expect(
-            command.func(pageWith(validCookies), { file: tmpVideo, tag: 'a', execute: true }),
-        ).rejects.toThrow(CommandExecutionError);
-    });
-
-    it('reports a missing biliup binary clearly', async () => {
-        mockSpawnSync.mockReturnValue({ error: Object.assign(new Error('nope'), { code: 'ENOENT' }) });
-        await expect(
-            command.func(pageWith(validCookies), { file: tmpVideo, tag: 'a', execute: true }),
-        ).rejects.toThrow(/biliup 二进制/);
-    });
+  it('defaults the title to the file basename', async () => {
+    const out = await command.func(mockPage(), { file: tmpVideo, tid: 21, tag: 'a' });
+    expect(out.status).toBe('dry-run');
+    expect(out.title).toBe(path.basename(tmpVideo).replace(/\.[^.]+$/, ''));
+  });
 });
