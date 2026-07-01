@@ -283,6 +283,17 @@ function refreshRowForError(site: string, entry: AuthRefreshSiteState | undefine
   };
 }
 
+// [pp-only] auth 探测默认走 persistent —— 桌面每 20s 的 quick/full 探测若用 ephemeral
+// 会爆一批临时窗口又关，是「窗口不停开又关」的一大来源。persistent 让轮询复用同一批
+// 常驻标签（每平台一个，官方扩展永不 idle 关闭），零 churn。keepTab 跟随 session。
+// 与 resolveSiteSession 一致：默认 persistent，不依赖 env；仅
+// PUBLISHPORT_SITE_SESSION=ephemeral 时才显式退回一次性会话。
+function authProbeSessionOpts(): { siteSession: 'persistent' | 'ephemeral'; keepTab: 'true' | 'false' } {
+  return process.env.PUBLISHPORT_SITE_SESSION === 'ephemeral'
+    ? { siteSession: 'ephemeral', keepTab: 'false' }
+    : { siteSession: 'persistent', keepTab: 'true' };
+}
+
 async function runQuick(cmd: CliCommand, opts: { timeoutSeconds: number; profile?: string }): Promise<AuthStatusRow> {
   try {
     const loaded = await loadLazyCommand(cmd);
@@ -309,8 +320,7 @@ async function runQuick(cmd: CliCommand, opts: { timeoutSeconds: number; profile
     }
 
     const result = await executeCommand(quickCmd, { timeout: opts.timeoutSeconds } as CommandArgs, false, {
-      siteSession: 'ephemeral',
-      keepTab: 'false',
+      ...authProbeSessionOpts(),
       windowMode: 'background',
       ...(opts.profile ? { profile: opts.profile } : {}),
     });
@@ -339,8 +349,7 @@ async function runFull(cmd: CliCommand, opts: { timeoutSeconds: number; profile?
     const loaded = await loadLazyCommand(cmd);
     const fullCmd = withTimeoutArg(loaded, opts.timeoutSeconds);
     const result = await executeCommand(fullCmd, { timeout: opts.timeoutSeconds } as CommandArgs, false, {
-      siteSession: 'ephemeral',
-      keepTab: 'false',
+      ...authProbeSessionOpts(),
       windowMode: 'background',
       ...(opts.profile ? { profile: opts.profile } : {}),
     });

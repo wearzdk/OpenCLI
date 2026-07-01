@@ -33,7 +33,7 @@ import { buildHtmlTreeJs, type HtmlTreeResult } from './browser/html-tree.js';
 import { buildExtractHtmlJs, runExtractFromHtml } from './browser/extract.js';
 import { analyzeSite, type PageSignals } from './browser/analyze.js';
 import { registerAuthCommands } from './commands/auth.js';
-import { daemonRestart, daemonStatus, daemonStop } from './commands/daemon.js';
+import { daemonRestart, daemonStatus, daemonStop, daemonWarm } from './commands/daemon.js';
 import { log } from './logger.js';
 import { bindTab, BrowserCommandError, fetchDaemonStatus, sendCommand } from './browser/daemon-client.js';
 import { aliasForContextId, loadProfileConfig, renameProfile, resolveProfileContextId, setDefaultProfile } from './browser/profile.js';
@@ -3411,6 +3411,11 @@ cli({
     .command('restart')
     .description('Restart the daemon')
     .action(async () => { await daemonRestart(); });
+  daemonCmd
+    .command('warm')
+    .description('Pre-open the background automation window (keeps a tab alive for reuse)')
+    .option('--url <url>', 'http(s) info page to keep in the warm tab (falls back to about:blank)')
+    .action(async (opts: { url?: string }) => { await daemonWarm(opts.url); });
 
   // ── External CLIs ─────────────────────────────────────────────────────────
 

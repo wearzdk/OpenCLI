@@ -198,10 +198,15 @@ describe('executeCommand — non-browser timeout', () => {
     vi.restoreAllMocks();
   });
 
-  it('keeps default browser commands on one-shot adapter sessions', async () => {
+  // [pp-only] PublishPort 把默认会话焊成 persistent（见 resolveSiteSession），所以
+  // 无 flag、无 env、适配器也没标 siteSession 时，浏览器命令默认复用同一个 site 会话、
+  // 保留标签、跨命令复用窗口 —— 而不是上游默认的一次性 ephemeral。
+  it('defaults browser commands to persistent site sessions (pp-only)', async () => {
+    const prev = process.env.PUBLISHPORT_SITE_SESSION;
+    delete process.env.PUBLISHPORT_SITE_SESSION; // 确保不受外部 env 干扰，测的是「纯默认」
     const closeWindow = vi.fn().mockResolvedValue(undefined);
     const mockPage = { closeWindow } as any;
-    const sessionOpts: Array<{ session?: string; idleTimeout?: number; windowMode?: string }> = [];
+    const sessionOpts: Array<{ session?: string; idleTimeout?: number; windowMode?: string; siteSession?: string }> = [];
 
     vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
     vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn, opts) => {
@@ -209,28 +214,67 @@ describe('executeCommand — non-browser timeout', () => {
       return fn(mockPage);
     });
 
-    const cmd = cli({
-      site: 'test-execution',
-      name: 'site-session-default', access: 'read',
-      description: 'test default one-shot browser session',
-      browser: true,
-      strategy: Strategy.PUBLIC,
-      func: async () => [{ ok: true }],
+    try {
+      const cmd = cli({
+        site: 'test-execution',
+        name: 'site-session-default', access: 'read',
+        description: 'test default persistent browser session',
+        browser: true,
+        strategy: Strategy.PUBLIC,
+        func: async () => [{ ok: true }],
+      });
+
+      await executeCommand(cmd, {});
+      await executeCommand(cmd, {});
+
+      expect(sessionOpts).toHaveLength(2);
+      // 两条命令落到同一个稳定 site 会话（无 UUID）→ 复用同一标签/窗口。
+      expect(sessionOpts[0]).toMatchObject({ session: 'site:test-execution', windowMode: 'background', siteSession: 'persistent' });
+      expect(sessionOpts[1]).toMatchObject({ session: 'site:test-execution', windowMode: 'background', siteSession: 'persistent' });
+      // persistent → keepTab=true → 命令跑完不关窗。
+      expect(closeWindow).not.toHaveBeenCalled();
+    } finally {
+      if (prev === undefined) delete process.env.PUBLISHPORT_SITE_SESSION;
+      else process.env.PUBLISHPORT_SITE_SESSION = prev;
+      vi.restoreAllMocks();
+    }
+  });
+
+  // [pp-only] 反向开关：PUBLISHPORT_SITE_SESSION=ephemeral 时退回一次性会话。
+  it('env PUBLISHPORT_SITE_SESSION=ephemeral forces one-shot sessions back', async () => {
+    const prev = process.env.PUBLISHPORT_SITE_SESSION;
+    process.env.PUBLISHPORT_SITE_SESSION = 'ephemeral';
+    const closeWindow = vi.fn().mockResolvedValue(undefined);
+    const mockPage = { closeWindow } as any;
+    const sessionOpts: Array<{ session?: string }> = [];
+
+    vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
+    vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn, opts) => {
+      sessionOpts.push(opts ?? {});
+      return fn(mockPage);
     });
 
-    await executeCommand(cmd, {});
-    await executeCommand(cmd, {});
+    try {
+      const cmd = cli({
+        site: 'test-execution',
+        name: 'site-session-force-ephemeral', access: 'read',
+        description: 'test env forces ephemeral',
+        browser: true,
+        strategy: Strategy.PUBLIC,
+        func: async () => [{ ok: true }],
+      });
 
-    expect(sessionOpts).toHaveLength(2);
-    expect(sessionOpts[0]?.session).toMatch(/^site:test-execution:/);
-    expect(sessionOpts[1]?.session).toMatch(/^site:test-execution:/);
-    expect(sessionOpts[0]?.session).not.toBe(sessionOpts[1]?.session);
-    expect(sessionOpts[0]?.idleTimeout).toBeUndefined();
-    expect(sessionOpts[1]?.idleTimeout).toBeUndefined();
-    expect(sessionOpts[0]?.windowMode).toBe('background');
-    expect(sessionOpts[1]?.windowMode).toBe('background');
-    expect(closeWindow).toHaveBeenCalledTimes(2);
-    vi.restoreAllMocks();
+      await executeCommand(cmd, {});
+      await executeCommand(cmd, {});
+
+      expect(sessionOpts[0]?.session).toMatch(/^site:test-execution:/);
+      expect(sessionOpts[0]?.session).not.toBe(sessionOpts[1]?.session);
+      expect(closeWindow).toHaveBeenCalledTimes(2);
+    } finally {
+      if (prev === undefined) delete process.env.PUBLISHPORT_SITE_SESSION;
+      else process.env.PUBLISHPORT_SITE_SESSION = prev;
+      vi.restoreAllMocks();
+    }
   });
 
   it('lets user --site-session ephemeral override adapter persistent metadata', async () => {
@@ -262,6 +306,82 @@ describe('executeCommand — non-browser timeout', () => {
       expect(sessionOpts[0]?.idleTimeout).toBeUndefined();
       expect(closeWindow).toHaveBeenCalledTimes(1);
     } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  // [pp-only] PUBLISHPORT_SITE_SESSION 环境变量把默认会话抬成 persistent，且刻意
+  // 压过 cmd.siteSession，好让 auth quickCheck 那种把 ephemeral 焊死的命令也复用窗口。
+  it('env PUBLISHPORT_SITE_SESSION=persistent lifts an ephemeral-baked command to persistent', async () => {
+    const closeWindow = vi.fn().mockResolvedValue(undefined);
+    const mockPage = { closeWindow } as any;
+    const sessionOpts: Array<{ session?: string; windowMode?: string; siteSession?: string }> = [];
+
+    vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
+    vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn, opts) => {
+      sessionOpts.push(opts ?? {});
+      return fn(mockPage);
+    });
+
+    const prev = process.env.PUBLISHPORT_SITE_SESSION;
+    process.env.PUBLISHPORT_SITE_SESSION = 'persistent';
+    try {
+      const cmd = cli({
+        site: 'test-execution',
+        name: 'site-session-env-persistent', access: 'read',
+        description: 'test env-driven persistent session',
+        browser: true,
+        strategy: Strategy.PUBLIC,
+        siteSession: 'ephemeral',
+        func: async () => [{ ok: true }],
+      });
+
+      await executeCommand(cmd, {});
+      await executeCommand(cmd, {});
+
+      expect(sessionOpts).toHaveLength(2);
+      expect(sessionOpts[0]).toMatchObject({ session: 'site:test-execution', siteSession: 'persistent' });
+      expect(sessionOpts[1]).toMatchObject({ session: 'site:test-execution', siteSession: 'persistent' });
+      // persistent → keepTab=true → 窗口不释放，跨命令复用同一标签。
+      expect(closeWindow).not.toHaveBeenCalled();
+    } finally {
+      if (prev === undefined) delete process.env.PUBLISHPORT_SITE_SESSION;
+      else process.env.PUBLISHPORT_SITE_SESSION = prev;
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('explicit --site-session ephemeral still overrides the env persistent default', async () => {
+    const closeWindow = vi.fn().mockResolvedValue(undefined);
+    const mockPage = { closeWindow } as any;
+    const sessionOpts: Array<{ session?: string; siteSession?: string }> = [];
+
+    vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
+    vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn, opts) => {
+      sessionOpts.push(opts ?? {});
+      return fn(mockPage);
+    });
+
+    const prev = process.env.PUBLISHPORT_SITE_SESSION;
+    process.env.PUBLISHPORT_SITE_SESSION = 'persistent';
+    try {
+      const cmd = cli({
+        site: 'test-execution',
+        name: 'site-session-env-flag-override', access: 'read',
+        description: 'test explicit flag beats env',
+        browser: true,
+        strategy: Strategy.PUBLIC,
+        func: async () => [{ ok: true }],
+      });
+
+      await executeCommand(cmd, {}, false, { siteSession: 'ephemeral' });
+
+      expect(sessionOpts).toHaveLength(1);
+      expect(sessionOpts[0]?.session).toMatch(/^site:test-execution:/);
+      expect(closeWindow).toHaveBeenCalledTimes(1);
+    } finally {
+      if (prev === undefined) delete process.env.PUBLISHPORT_SITE_SESSION;
+      else process.env.PUBLISHPORT_SITE_SESSION = prev;
       vi.restoreAllMocks();
     }
   });
@@ -434,7 +554,9 @@ describe('executeCommand — non-browser timeout', () => {
       func: async () => { throw new Error('adapter failure'); },
     });
 
-    await expect(executeCommand(cmd, {})).rejects.toThrow('adapter failure');
+    // [pp-only] 默认已是 persistent（不关窗）；本例专测「失败路径会释放标签」，故显式
+    // 走 ephemeral 才有 closeWindow 可断言。
+    await expect(executeCommand(cmd, {}, false, { siteSession: 'ephemeral' })).rejects.toThrow('adapter failure');
     expect(closeWindow).toHaveBeenCalledTimes(1);
 
     vi.restoreAllMocks();
@@ -604,7 +726,8 @@ describe('executeCommand — non-browser timeout', () => {
         func: async () => { throw new Error('adapter failure'); },
       });
 
-      const thrown = await executeCommand(cmd, {}, false, { trace: 'retain-on-failure' }).catch((err) => err);
+      // [pp-only] 默认 persistent 不关窗；本例断言失败路径 closeWindow，故显式 ephemeral。
+      const thrown = await executeCommand(cmd, {}, false, { trace: 'retain-on-failure', siteSession: 'ephemeral' }).catch((err) => err);
       expect(thrown).toBeInstanceOf(Error);
       expect((thrown as Error).message).toContain('adapter failure');
 
@@ -667,7 +790,8 @@ describe('executeCommand — non-browser timeout', () => {
         func: async () => [{ ok: true }],
       });
 
-      await expect(executeCommand(cmd, {}, false, { trace: 'on', onTraceExport })).resolves.toEqual([{ ok: true }]);
+      // [pp-only] 默认 persistent 不关窗；本例断言成功路径 closeWindow，故显式 ephemeral。
+      await expect(executeCommand(cmd, {}, false, { trace: 'on', onTraceExport, siteSession: 'ephemeral' })).resolves.toEqual([{ ok: true }]);
 
       const stderr = stderrSpy.mock.calls.flat().join('\n');
       expect(stderr).toContain('OpenCLI trace artifact:');

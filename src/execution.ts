@@ -29,6 +29,7 @@ import { executePipeline } from './pipeline/index.js';
 import { adapterLoadError, ArgumentError, CommandExecutionError, attachTraceReceipt, getErrorMessage } from './errors.js';
 import { shouldUseBrowserSession } from './capabilityRouting.js';
 import { getBrowserFactory, browserSession, runWithTimeout, DEFAULT_BROWSER_COMMAND_TIMEOUT, type BrowserWindowMode } from './runtime.js';
+import { withBrowserSessionLockIf } from './browser-session-lock.js';
 import { resolveProfileContextId } from './browser/profile.js';
 import { emitHook, type HookContext } from './hooks.js';
 import { log } from './logger.js';
@@ -259,7 +260,10 @@ export async function executeCommand(
       const session = resolveAdapterBrowserSession(cmd, siteSession);
       const keepTab = resolveKeepTab(siteSession, opts.keepTab);
       const windowMode = resolveBrowserWindowMode(cmd.defaultWindowMode ?? 'background', opts.windowMode);
-      result = await browserSession(BrowserFactory, async (page) => {
+      // [pp-only] 后台自动化命令共用同一个窗口，物理上一次只能安全跑一条——用机器级锁
+      // 把并发命令串行化（排队复用同一窗口），避免互相拆窗/扯掉调试器。前台/交互命令走
+      // 独立窗口，不参与串行。见 browser-session-lock.ts。
+      result = await withBrowserSessionLockIf(windowMode !== 'foreground', () => browserSession(BrowserFactory, async (page) => {
         const observation = traceMode === 'off'
           ? null
           : new ObservationSession({
@@ -373,7 +377,7 @@ export async function executeCommand(
           if (!keepTab) await page.closeWindow?.().catch(() => {});
           throw err;
         }
-      }, { session, cdpEndpoint, contextId, windowMode, surface: 'adapter', siteSession });
+      }, { session, cdpEndpoint, contextId, windowMode, surface: 'adapter', siteSession }));
     } else {
       // Non-browser commands: enforce a timeout only when the command exposes
       // a `--timeout` arg (and the resolved value is positive). Without that
@@ -497,8 +501,26 @@ function normalizeSiteSession(raw: unknown): SiteSessionMode | null {
   throw new ArgumentError(`--site-session must be one of: ephemeral, persistent. Received: "${String(raw)}"`);
 }
 
+// [pp-only] PublishPort 是「单机单用户 + 复用真实登录态」模型：它希望所有浏览器
+// 命令长期复用同一个后台自动化窗口，而不是上游默认的 ephemeral（每条命令开标签→
+// 干活→30s idle 后关标签，AI 命令间隔一超过 30s 就变成「窗口又开又关」）。
+// 官方扩展对 persistent 会话本来就永不 idle 关闭、且 SW 重启后能从存活标签反查回
+// 窗口复用——所以只要把默认会话抬成 persistent，无需改扩展即可复用窗口。
+//
+// 关键：默认就是 persistent，**不依赖任何环境变量**。早先版本靠桌面注入
+// PUBLISHPORT_SITE_SESSION=persistent 才开启，实测太脆——同一台机可能同时跑着
+// 「注入了 env 的 dev 构建」和「没注入的正式构建」，后者 fallback 回 ephemeral 照样
+// churn。所以直接把 fork 默认焊成 persistent；只保留 PUBLISHPORT_SITE_SESSION=ephemeral
+// 作为显式反向开关（极少用），供个别场景强制回到一次性会话。
+// 优先级：显式 `--site-session` flag > 环境变量（仅用于强制 ephemeral）> 适配器 cmd.siteSession > 'persistent'。
+function envDefaultSiteSession(): SiteSessionMode | null {
+  const raw = process.env.PUBLISHPORT_SITE_SESSION;
+  if (raw === 'persistent' || raw === 'ephemeral') return raw;
+  return null;
+}
+
 function resolveSiteSession(cmd: CliCommand, rawOption?: unknown): SiteSessionMode {
-  return normalizeSiteSession(rawOption) ?? cmd.siteSession ?? 'ephemeral';
+  return normalizeSiteSession(rawOption) ?? envDefaultSiteSession() ?? cmd.siteSession ?? 'persistent';
 }
 
 function resolveAdapterBrowserSession(cmd: CliCommand, siteSession: SiteSessionMode): string {
