@@ -59,7 +59,7 @@ jobs:
       # automatic. Requires a trusted publisher configured for publishport-opencli
       # on npmjs.com pointing at this repo + workflow file.
       - name: Publish to npm
-        run: npm publish --access public
+        run: npm publish --access public --tag latest
 
       # The desktop runtime installs from the npmmirror mirror, not npmjs. A fresh
       # publish is invisible there until we trigger a sync and it lands. Do it here

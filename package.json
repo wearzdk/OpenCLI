@@ -43,7 +43,7 @@
   "scripts": {
     "dev": "tsx src/main.ts",
     "dev:bun": "bun src/main.ts",
-    "release": "npm version prerelease --preid pp -m \"[pp-only] chore(release): %s\" && git push origin HEAD --follow-tags",
+    "release": "npm version prerelease --preid pp -m \"[pp-only] chore(release): %s\" && git push origin HEAD && git push origin \"$(git describe --tags --abbrev=0)\"",
     "build": "npm run clean-dist && npm run copy-yaml && npm run build-manifest",
     "prebuild-manifest": "tsc --build && node -e \"require('fs').chmodSync('dist/src/main.js', 0o755)\"",
     "build-manifest": "tsx src/build-manifest.ts",
