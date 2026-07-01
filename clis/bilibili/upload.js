@@ -125,6 +125,26 @@ function PP_COMPLETE(a) {
   })();
 }
 
+// 解析话题：按 tid 拉可用话题，找到 topic_id 对应项，取其 mission_id（对齐上游
+// _check_topic_to_mission：mission_id 只能从 get_available_topics 配对，不让手填/臆造）。
+function PP_RESOLVE_TOPIC(a) {
+  return (async function () {
+    try {
+      var r = await fetch('https://member.bilibili.com/x/vupre/web/topic/type?type_id=' + encodeURIComponent(a.tid) + '&pn=0&ps=200', { credentials: 'include' });
+      var j = await r.json();
+      if (!j || j.code !== 0 || !j.data || !Array.isArray(j.data.topics)) {
+        return { error: '获取话题列表失败：' + ((j && j.message) || ('code=' + (j && j.code))) };
+      }
+      var hit = null;
+      for (var i = 0; i < j.data.topics.length; i++) {
+        if (Number(j.data.topics[i].topic_id) === Number(a.topicId)) { hit = j.data.topics[i]; break; }
+      }
+      if (!hit) return { error: 'topic_id ' + a.topicId + ' 不在分区 ' + a.tid + ' 的可用话题里（用 bilibili topics --tid ' + a.tid + ' 查合法值）' };
+      return { topicId: Number(hit.topic_id), missionId: hit.mission_id != null ? Number(hit.mission_id) : null, name: hit.topic_name || '' };
+    } catch (e) { return { error: '解析话题异常：' + String((e && e.message) || e) }; }
+  })();
+}
+
 // upload_cover：form-encoded，cover 为 data URI，附 csrf；返回 data.url。
 function PP_COVER(a) {
   return (async function () {
@@ -152,6 +172,9 @@ function PP_SUBMIT(a) {
     if (!m) return { error: '未找到 bili_jct CSRF token' };
     var csrf = decodeURIComponent(m[1]);
     var meta = a.meta;
+    // 对齐上游 VideoMeta.__dict__ 的 None 剔除：只删值为 null/undefined 的字段，其余全量参数照发
+    // （缺参易被风控打特征，故除 null 外一个都不省）。
+    for (var k in meta) { if (meta[k] === null || meta[k] === undefined) delete meta[k]; }
     meta.csrf = csrf;
     try {
       var r = await fetch('https://member.bilibili.com/x/vu/web/add/v3?csrf=' + encodeURIComponent(csrf) + '&t=' + Date.now(), {
@@ -218,6 +241,7 @@ cli({
     { name: 'tid', type: 'number', required: true, help: '分区 id（B站 typeid，必填，禁止臆造）。合法值用 `bilibili partitions` 列举后取。' },
     { name: 'tag', required: true, help: '标签，逗号分隔（B站要求至少 1 个）' },
     { name: 'desc', help: '简介' },
+    { name: 'topic', type: 'number', help: '参与话题的 topic_id（重要流量入口）。合法值用 `bilibili topics --tid <tid>` 列举，禁止臆造；mission_id 自动匹配。' },
     { name: 'cover', help: '封面图片路径（不传由 B站自动截取）' },
     { name: 'copyright', type: 'number', help: '1=自制 2=转载（默认 1）' },
     { name: 'source', help: '转载来源 URL（copyright=2 时必填）' },
@@ -320,34 +344,53 @@ cli({
       coverUrl = cov.url;
     }
 
-    // ── 6) 构造 add/v3 meta（对应 VideoMeta.__dict__，仅保留有值字段+上游常量）并提交 ──
+    // ── 6) 话题（可选，重要流量入口）：解析 topic_id → mission_id（自动配对，禁手填/臆造）──
+    let topicId = null;
+    let missionId = null;
+    if (kwargs.topic != null && kwargs.topic !== '') {
+      if (!Number.isFinite(Number(kwargs.topic))) throw new ArgumentError('--topic 必须是 topic_id 数字，用 `bilibili topics --tid <tid>` 取合法值');
+      const tp = await callInPage(page, PP_RESOLVE_TOPIC, { tid, topicId: Number(kwargs.topic) });
+      if (!tp || tp.error) throw new CommandExecutionError(`B站话题解析失败：${(tp && tp.error) || '无返回'}`);
+      topicId = tp.topicId;
+      missionId = tp.missionId;
+    }
+
+    // ── 7) 构造 add/v3 meta：**逐字段复刻上游 VideoMeta.__dict__ 的全量参数**，未用到的可选项置 null，
+    //      交由页面内 PP_SUBMIT 按上游规则剔除 null（除 null 外一个参数都不省——缺参易被风控打特征）。──
+    const dtime = kwargs.dtime != null && kwargs.dtime !== '' ? Number(kwargs.dtime) : null;
     const meta = {
       title,
       copyright,
       tid,
       tag: tags.join(','),
-      desc: String(kwargs.desc ?? ''),
+      mission_id: missionId, // null → 剔除（无话题时）
+      topic_id: topicId, // null → 剔除（无话题时）
+      // topic_detail 仅在真参与话题时发；无话题路径与已验证成功的 BV1VHTe6rEZz 完全一致，不擅动。
+      topic_detail: topicId != null ? { from_topic_id: topicId, from_source: 'arc.web.recommend' } : null,
       desc_format_id: 9999,
+      desc: String(kwargs.desc ?? ''),
+      dtime, // null → 剔除
       recreate: -1,
-      dynamic: String(kwargs.dynamic ?? ''),
+      dynamic: String(kwargs.dynamic ?? ''), // 与已验证路径一致：空时发 ""（不省）
       interactive: 0,
       act_reserve_create: 0,
       no_disturbance: 0,
+      porder: null, // 剔除（无商单）
       adorder_type: 9,
       no_reprint: kwargs['no-reprint'] ? 1 : 0,
       subtitle: { open: 0, lan: '' },
+      neutral_mark: null, // 剔除（无创作者声明）
       dolby: 0,
       lossless_music: 0,
-      up_selection_reply: false,
+      up_selection_reply: false, // 对齐上游 = up_close_reply（默认 false）
       up_close_reply: false,
       up_close_danmu: false,
       web_os: 1,
+      source: copyright === 2 ? source : null, // 仅转载带来源，否则剔除
       watermark: { state: 0 },
       cover: coverUrl,
       videos: [{ title, desc: '', filename: comp.filename, cid: comp.cid }],
     };
-    if (copyright === 2) meta.source = source;
-    if (kwargs.dtime != null && kwargs.dtime !== '') meta.dtime = Number(kwargs.dtime);
 
     const sub = await callInPage(page, PP_SUBMIT, { meta });
     if (!sub || sub.error) throw new CommandExecutionError(`B站 ${(sub && sub.error) || 'add/v3 无返回'}`);

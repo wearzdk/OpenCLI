@@ -16,6 +16,19 @@
 import { cli, Strategy } from '@jackwener/opencli/registry';
 import { CommandExecutionError } from '@jackwener/opencli/errors';
 
+// 导航到 member.bilibili.com 并确认真的落在该源（浏览器会话冷启动/偶发会漂到 data: 空白页，
+// 直接 fetch 会跨域失败）。同源后才能带 cookie 发投稿中心接口。
+async function gotoMember(page) {
+  for (let i = 0; i < 6; i++) {
+    await page.goto('https://member.bilibili.com/platform/home');
+    await page.wait({ time: 1 });
+    let href = '';
+    try { href = String((await page.evaluate('location.href')) || ''); } catch { href = ''; }
+    if (/^https?:\/\/member\.bilibili\.com\//.test(href)) return;
+  }
+  throw new CommandExecutionError('无法进入 B站创作中心（可能未登录或被风控）。请先在客户端登录哔哩哔哩。');
+}
+
 cli({
   site: 'bilibili',
   name: 'partitions',
@@ -30,8 +43,7 @@ cli({
   func: async (page) => {
     if (!page) throw new CommandExecutionError('B站分区列举需要浏览器会话');
     // 钉到 member.bilibili.com 源，再发同源 fetch（接口需登录）。
-    await page.goto('https://member.bilibili.com/platform/home');
-    await page.wait({ time: 1 });
+    await gotoMember(page);
     const rows = await page.evaluate(
       '(async () => {'
       + "const r = await fetch('https://member.bilibili.com/x/vupre/web/archive/pre?lang=cn', { credentials: 'include' });"

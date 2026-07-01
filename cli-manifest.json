@@ -4552,6 +4552,36 @@
   },
   {
     "site": "bilibili",
+    "name": "topics",
+    "aliases": [
+      "topic-list"
+    ],
+    "description": "列出某分区下可参与的投稿话题（topic_id + 名称 + 简介 + 播放量），供 `bilibili upload --topic` 取合法 topic_id。禁止臆造。先用 `bilibili partitions` 取 tid。",
+    "access": "read",
+    "domain": "member.bilibili.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "tid",
+        "type": "number",
+        "required": true,
+        "help": "分区 id（用 `bilibili partitions` 取）。话题按分区提供。"
+      }
+    ],
+    "columns": [
+      "topic_id",
+      "name",
+      "play",
+      "desc"
+    ],
+    "type": "js",
+    "modulePath": "bilibili/topics.js",
+    "sourceFile": "bilibili/topics.js",
+    "navigateBefore": "https://member.bilibili.com"
+  },
+  {
+    "site": "bilibili",
     "name": "unfollow",
     "description": "取消关注 B站用户（官方 API，需登录）",
     "access": "write",
@@ -4617,6 +4647,12 @@
         "type": "str",
         "required": false,
         "help": "简介"
+      },
+      {
+        "name": "topic",
+        "type": "number",
+        "required": false,
+        "help": "参与话题的 topic_id（重要流量入口）。合法值用 `bilibili topics --tid <tid>` 列举，禁止臆造；mission_id 自动匹配。"
       },
       {
         "name": "cover",
