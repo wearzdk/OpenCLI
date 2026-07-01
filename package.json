@@ -78,7 +78,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jackwener/opencli.git"
+    "url": "git+https://github.com/wearzdk/OpenCLI.git"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
