@@ -4703,10 +4703,16 @@
         "help": "分块并发数（默认 3）"
       },
       {
+        "name": "draft",
+        "type": "boolean",
+        "required": false,
+        "help": "存草稿而非直接发布（上传视频后存到创作中心草稿箱，不公开）"
+      },
+      {
         "name": "execute",
         "type": "boolean",
         "required": false,
-        "help": "真正投稿；不带则只做 dry-run 校验"
+        "help": "真正发布投稿；不带（也不带 --draft）则只做 dry-run 校验"
       }
     ],
     "columns": [
@@ -4801,6 +4807,30 @@
     "modulePath": "bilibili/video.js",
     "sourceFile": "bilibili/video.js",
     "navigateBefore": true
+  },
+  {
+    "site": "bilibili",
+    "name": "video-drafts",
+    "aliases": [
+      "upload-drafts"
+    ],
+    "description": "列出 B站视频投稿草稿箱里的草稿（id + 标题 + 时长 + 修改时间），供确认 `bilibili upload --draft` 结果。（专栏草稿见 `bilibili drafts`）",
+    "access": "read",
+    "domain": "member.bilibili.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "id",
+      "title",
+      "duration",
+      "mtime",
+      "cid"
+    ],
+    "type": "js",
+    "modulePath": "bilibili/video-drafts.js",
+    "sourceFile": "bilibili/video-drafts.js",
+    "navigateBefore": "https://member.bilibili.com"
   },
   {
     "site": "bilibili",

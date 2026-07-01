@@ -187,6 +187,27 @@ function PP_SUBMIT(a) {
     } catch (e) { return { error: 'add/v3 异常：' + String((e && e.message) || e) }; }
   })();
 }
+
+// 保存草稿：POST x/vupre/web/draft/add（body 由 Node 侧按上游 deluxebear/bilibilicli saveDraft
+// 逐字段构造，含 ab_cover_info:null 等显式 null，故这里**不剔除 null**，只补 csrf 后原样发）。
+function PP_SAVE_DRAFT(a) {
+  return (async function () {
+    var m = document.cookie.match(/(?:^|;\s*)bili_jct=([^;]+)/);
+    if (!m) return { error: '未找到 bili_jct CSRF token' };
+    var csrf = decodeURIComponent(m[1]);
+    var body = a.body;
+    body.csrf = csrf;
+    try {
+      var r = await fetch('https://member.bilibili.com/x/vupre/web/draft/add?t=' + Date.now() + '&csrf=' + encodeURIComponent(csrf), {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json;charset=UTF-8' }, body: JSON.stringify(body),
+      });
+      var j = await r.json();
+      if (!j || j.code !== 0) return { error: 'draft/add 保存草稿失败：' + (j && j.message ? j.message : '') + '（code=' + (j && j.code) + ' status=' + r.status + '）' };
+      return { data: j.data };
+    } catch (e) { return { error: 'draft/add 异常：' + String((e && e.message) || e) }; }
+  })();
+}
 /* eslint-enable */
 
 const callInPage = (page, fn, a) => page.evaluateWithArgs(`(${fn.toString()})(a)`, { a });
@@ -250,7 +271,8 @@ cli({
     { name: 'dtime', type: 'number', help: '定时发布的 10 位 unix 时间戳（可空=立即）' },
     { name: 'line', help: `上传线路：${Object.keys(LINES).join('/')}（默认 ${DEFAULT_LINE}）` },
     { name: 'concurrency', type: 'number', help: '分块并发数（默认 3）' },
-    { name: 'execute', type: 'boolean', help: '真正投稿；不带则只做 dry-run 校验' },
+    { name: 'draft', type: 'boolean', help: '存草稿而非直接发布（上传视频后存到创作中心草稿箱，不公开）' },
+    { name: 'execute', type: 'boolean', help: '真正发布投稿；不带（也不带 --draft）则只做 dry-run 校验' },
   ],
   columns: ['status', 'title', 'bvid', 'url'],
   func: async (page, kwargs) => {
@@ -284,15 +306,19 @@ cli({
 
     const concurrency = kwargs.concurrency != null && kwargs.concurrency !== '' ? Number(kwargs.concurrency) : 3;
 
+    // 动作三态：--draft 存草稿（安全，不公开）；--execute 正式发布；都不带则 dry-run 只校验。
+    const doDraft = Boolean(kwargs.draft);
+    const doPublish = Boolean(kwargs.execute) && !doDraft;
+
     // ── 登录态确认（真实浏览器，member.bilibili.com 源）──────────────────────
     await ensureLoggedInMember(page);
 
-    if (!kwargs.execute) {
+    if (!doDraft && !doPublish) {
       return {
         status: 'dry-run',
         title,
         bvid: '',
-        url: `校验通过：登录态有效、视频就绪、分区 ${tid}、标签 [${tags.join(', ')}]、版权 ${copyright === 1 ? '自制' : '转载'}。加 --execute 真正投稿。`,
+        url: `校验通过：登录态有效、视频就绪、分区 ${tid}、标签 [${tags.join(', ')}]、版权 ${copyright === 1 ? '自制' : '转载'}。加 --execute 发布，或 --draft 存草稿。`,
       };
     }
 
@@ -353,6 +379,52 @@ cli({
       if (!tp || tp.error) throw new CommandExecutionError(`B站话题解析失败：${(tp && tp.error) || '无返回'}`);
       topicId = tp.topicId;
       missionId = tp.missionId;
+    }
+
+    // ── 7a) 存草稿分支：逐字段复刻上游 deluxebear/bilibilicli saveDraft 的 draft/add body ──
+    if (doDraft) {
+      const draftBody = {
+        videos: [
+          { filename: comp.filename, title, desc: '', cid: comp.cid, is_4k: false, is_8k: false, is_hdr: false },
+        ],
+        cover: coverUrl,
+        cover43: coverUrl,
+        ai_cover: 0,
+        is_ab_cover: 0,
+        ab_cover_info: null, // 显式 null（照上游发，草稿不剔除 null）
+        title,
+        copyright,
+        tid,
+        tag: tags.join(','),
+        desc: String(kwargs.desc ?? ''),
+        recreate: -1,
+        dynamic: String(kwargs.dynamic ?? ''),
+        is_only_self: 0,
+        space_hidden: 2,
+        watermark: { state: 0 },
+        no_reprint: kwargs['no-reprint'] ? 1 : 0,
+        subtitle: { open: 0, lan: '' },
+        dolby: 0,
+        lossless_music: 0,
+        up_selection_reply: false,
+        up_close_reply: false,
+        up_close_danmu: false,
+      };
+      if (copyright === 2) draftBody.source = source;
+      if (topicId != null) {
+        draftBody.topic_id = topicId;
+        draftBody.topic_detail = { from_topic_id: topicId, from_source: 'arc.web.search' };
+        if (missionId != null) draftBody.mission_id = missionId;
+      }
+      const dr = await callInPage(page, PP_SAVE_DRAFT, { body: draftBody });
+      if (!dr || dr.error) throw new CommandExecutionError(`B站 ${(dr && dr.error) || 'draft/add 无返回'}`);
+      const draftId = dr.data && (dr.data.aid != null ? dr.data.aid : dr.data.draft_id != null ? dr.data.draft_id : dr.data.id);
+      return {
+        status: '✅ 草稿已保存',
+        title,
+        bvid: draftId != null ? `draft:${draftId}` : '',
+        url: 'https://member.bilibili.com/platform/upload-manager/article?group=draft',
+      };
     }
 
     // ── 7) 构造 add/v3 meta：**逐字段复刻上游 VideoMeta.__dict__ 的全量参数**，未用到的可选项置 null，
