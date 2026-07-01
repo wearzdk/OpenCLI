@@ -24671,6 +24671,80 @@
   },
   {
     "site": "medium",
+    "name": "article",
+    "description": "发布 Medium 文章（走 medium.com 内部编辑器端点，非官方 API）。默认正式发布；加 --draft 仅存草稿。正文 Markdown，图片自动转存 Medium 图床。可选 --tags/--subtitle/--canonical-url。",
+    "access": "write",
+    "domain": "medium.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "文章标题（作为 Medium 文章标题）"
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "文章正文（Markdown）"
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "正文文件路径（UTF-8，Markdown）"
+      },
+      {
+        "name": "tags",
+        "type": "str",
+        "required": false,
+        "help": "Medium 话题标签，逗号分隔，最多 5 个（如 \"AI,Programming,Open Source\"）"
+      },
+      {
+        "name": "subtitle",
+        "type": "str",
+        "required": false,
+        "help": "副标题（可选，显示在标题下方）"
+      },
+      {
+        "name": "canonical-url",
+        "type": "str",
+        "required": false,
+        "help": "原文规范链接（可选，内容首发别处时填，避免 SEO 重复）"
+      },
+      {
+        "name": "draft",
+        "type": "boolean",
+        "required": false,
+        "help": "仅保存草稿，不正式发布"
+      },
+      {
+        "name": "execute",
+        "type": "boolean",
+        "required": false,
+        "help": "确认执行写操作。不加此参数则拒绝写入。"
+      }
+    ],
+    "columns": [
+      "status",
+      "outcome",
+      "message",
+      "target_type",
+      "target",
+      "created_target",
+      "created_url"
+    ],
+    "type": "js",
+    "modulePath": "medium/article.js",
+    "sourceFile": "medium/article.js",
+    "navigateBefore": "https://medium.com"
+  },
+  {
+    "site": "medium",
     "name": "feed",
     "description": "Medium 热门文章 Feed",
     "access": "read",
@@ -24705,6 +24779,36 @@
     "modulePath": "medium/feed.js",
     "sourceFile": "medium/feed.js",
     "navigateBefore": "https://medium.com"
+  },
+  {
+    "site": "medium",
+    "name": "login",
+    "description": "打开 Medium 首页并等待浏览器完成登录（供桌面客户端引导登录）。",
+    "access": "write",
+    "domain": "medium.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
+        "required": false,
+        "help": "等待用户完成登录的最长秒数"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "medium/login.js",
+    "sourceFile": "medium/login.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
   },
   {
     "site": "medium",
@@ -24816,6 +24920,25 @@
     "type": "js",
     "modulePath": "medium/user.js",
     "sourceFile": "medium/user.js",
+    "navigateBefore": "https://medium.com"
+  },
+  {
+    "site": "medium",
+    "name": "whoami",
+    "description": "查询当前登录的 Medium 账户信息。",
+    "access": "read",
+    "domain": "medium.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "medium/whoami.js",
+    "sourceFile": "medium/whoami.js",
     "navigateBefore": "https://medium.com"
   },
   {
