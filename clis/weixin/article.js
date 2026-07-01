@@ -123,18 +123,20 @@ export const weixinProfile = {
     },
 
     // 登录检测：移植自 Wechatsync WeixinAdapter.checkAuth()
-    // 在 mp.weixin.qq.com 首页解析 token / nickName / avatar
+    // 在 mp.weixin.qq.com 首页解析账号标识 / nickName / avatar
     checkAuth: async (_PP) => {
         const resp = await fetch('https://mp.weixin.qq.com/', { method: 'GET', credentials: 'include' });
         const html = await resp.text();
 
-        const tokenMatch = html.match(/data:\s*\{[\s\S]*?t:\s*["']([^"']+)["']/);
-        if (!tokenMatch) {
+        // 判据用账号标识 user_name（gh_xxx），不能用 token——实测未登录首页里
+        // `data:{ ... t:"https://res.wx.qq.com/mpres/..." }` 会误命中 token 正则，
+        // 导致把登录页当成已登录。user_name / nick_name 只在已登录的公众平台首页出现。
+        const userNameMatch = html.match(/user_name:\s*["']([^"']+)["']/);
+        const nickNameMatch = html.match(/nick_name:\s*["']([^"']+)["']/);
+        if (!userNameMatch && !nickNameMatch) {
             return { isAuthenticated: false };
         }
 
-        const nickNameMatch = html.match(/nick_name:\s*["']([^"']+)["']/);
-        const userNameMatch = html.match(/user_name:\s*["']([^"']+)["']/);
         const avatarMatch = html.match(/class="weui-desktop-account__thumb"[^>]*src="([^"]+)"/);
         const headImgMatch = html.match(/head_img:\s*['"]([^'"]+)['"]/);
 

@@ -41604,6 +41604,36 @@
   },
   {
     "site": "weixin",
+    "name": "login",
+    "description": "打开微信公众平台首页并等待浏览器完成扫码登录（供桌面客户端引导登录）。",
+    "access": "write",
+    "domain": "mp.weixin.qq.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 300,
+        "required": false,
+        "help": "等待用户完成登录的最长秒数"
+      }
+    ],
+    "columns": [
+      "status",
+      "logged_in",
+      "user_id",
+      "username"
+    ],
+    "type": "js",
+    "modulePath": "weixin/login.js",
+    "sourceFile": "weixin/login.js",
+    "navigateBefore": false,
+    "siteSession": "persistent",
+    "defaultWindowMode": "foreground"
+  },
+  {
+    "site": "weixin",
     "name": "search",
     "description": "使用搜狗微信搜索公众号文章；如需导出正文 Markdown，请使用 weixin download 处理公众号文章链接",
     "access": "read",
