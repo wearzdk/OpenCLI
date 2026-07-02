@@ -4,6 +4,8 @@ import {
     pickPath,
     buildTransferImagesJs,
     transferImages,
+    isLocalImagePath,
+    inlineLocalImages,
 } from './images.js';
 
 /**
@@ -178,5 +180,52 @@ describe('transferImages (无 spec / 无图 短路)', () => {
         const out = await transferImages(page, '纯文本', { spec: { url: 'u' } });
         expect(page.evaluate).not.toHaveBeenCalled();
         expect(out.content).toBe('纯文本');
+    });
+});
+
+describe('isLocalImagePath', () => {
+    it('本机绝对路径 / file:// / Windows 盘符判为本机', () => {
+        expect(isLocalImagePath('/tmp/x.png')).toBe(true);
+        expect(isLocalImagePath('file:///tmp/x.png')).toBe(true);
+        expect(isLocalImagePath('C:\\imgs\\x.png')).toBe(true);
+        expect(isLocalImagePath('C:/imgs/x.png')).toBe(true);
+    });
+    it('URL / data / 协议相对 / 站点相对裸名一律不是本机', () => {
+        expect(isLocalImagePath('https://cdn/x.png')).toBe(false);
+        expect(isLocalImagePath('http://cdn/x.png')).toBe(false);
+        expect(isLocalImagePath('data:image/png;base64,AAAA')).toBe(false);
+        expect(isLocalImagePath('blob:https://a/b')).toBe(false);
+        expect(isLocalImagePath('//cdn/x.png')).toBe(false);
+        expect(isLocalImagePath('x.png')).toBe(false);
+        expect(isLocalImagePath('')).toBe(false);
+        expect(isLocalImagePath(null)).toBe(false);
+    });
+});
+
+describe('inlineLocalImages', () => {
+    const fakeRead = async (p) => {
+        if (p === '/tmp/ok.png') return Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+        throw new Error('ENOENT');
+    };
+    it('本机图片读成 data: URI 并原地替换，URL 保持不动', async () => {
+        const md = '![a](/tmp/ok.png) 和 ![b](https://cdn/keep.png)';
+        const r = await inlineLocalImages(md, { readFile: fakeRead });
+        expect(r.content).toContain('data:image/png;base64,');
+        expect(r.content).toContain('https://cdn/keep.png'); // 远程 URL 不动
+        expect(r.content).not.toContain('/tmp/ok.png');
+        expect(r.inlined).toHaveLength(1);
+        expect(r.inlined[0].mime).toBe('image/png');
+        expect(r.missing).toHaveLength(0);
+    });
+    it('读不到的本机图片进 missing，原路径保留', async () => {
+        const r = await inlineLocalImages('![x](/tmp/nope.jpg)', { readFile: fakeRead });
+        expect(r.missing).toHaveLength(1);
+        expect(r.missing[0].src).toBe('/tmp/nope.jpg');
+        expect(r.content).toContain('/tmp/nope.jpg'); // 失败则原样保留
+    });
+    it('HTML <img> 本机 src 同样处理', async () => {
+        const r = await inlineLocalImages('<img src="/tmp/ok.png" alt="k">', { readFile: fakeRead });
+        expect(r.content).toContain('data:image/png;base64,');
+        expect(r.content).toContain('alt="k"'); // 其余属性保留
     });
 });

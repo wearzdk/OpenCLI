@@ -6,13 +6,10 @@ async function hasZhihuAuthCookie(page) {
   return cookies.some(c => c.name === 'z_c0' && c.value);
 }
 
-async function verifyZhihuIdentity(page) {
-  if (!await hasZhihuAuthCookie(page)) {
-    throw new AuthRequiredError('www.zhihu.com', 'Zhihu z_c0 cookie missing — anonymous');
-  }
+async function probeZhihuMe(page) {
   await page.goto('https://www.zhihu.com/');
   await page.wait(2);
-  const data = await page.evaluate(`
+  return page.evaluate(`
     (async () => {
       try {
         const r = await fetch('https://www.zhihu.com/api/v4/me?include=url_token', { credentials: 'include' });
@@ -23,6 +20,19 @@ async function verifyZhihuIdentity(page) {
       }
     })()
   `);
+}
+
+async function verifyZhihuIdentity(page) {
+  if (!await hasZhihuAuthCookie(page)) {
+    throw new AuthRequiredError('www.zhihu.com', 'Zhihu z_c0 cookie missing — anonymous');
+  }
+  let data = await probeZhihuMe(page);
+  // 冷启动现象：z_c0 cookie 明明在，首次 /api/v4/me 却偶发 401/403（浏览器会话未热身）。
+  // 既然本地已有有效登录 cookie，就不该据此判定为匿名——短暂等待后重试一次再下结论。
+  if (data && (data.__httpError === 401 || data.__httpError === 403)) {
+    await page.wait(2);
+    data = await probeZhihuMe(page);
+  }
   if (data?.__exception) {
     throw new CommandExecutionError(`Zhihu whoami failed: ${data.__exception}`);
   }

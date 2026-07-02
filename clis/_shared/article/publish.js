@@ -18,6 +18,7 @@
  */
 import { CommandExecutionError } from '@jackwener/opencli/errors';
 import { normalizeContent } from './format.js';
+import { inlineLocalImages } from './images.js';
 import { PAGE_RUNTIME } from './page-runtime.js';
 
 /**
@@ -146,15 +147,30 @@ export async function publishArticle(page, args) {
     if (typeof profile.publish !== 'function') throw new Error('publishArticle: profile.publish must be a function');
 
     const norm = normalizeContent(body, { format });
-    const content = profile.outputFormat === 'markdown' ? norm.markdown : norm.html;
+
+    // Node 侧：正文里引用的【本机图片路径】页面内 fetch 不到（会被当成站点相对 URL → 404），
+    // 先读成 data: URI 再注入页面，交给平台的图片转存把它上传到平台图床。
+    const mdInlined = await inlineLocalImages(norm.markdown);
+    const htmlInlined = await inlineLocalImages(norm.html);
+    const markdown = mdInlined.content;
+    const html = htmlInlined.content;
+    const content = profile.outputFormat === 'markdown' ? markdown : html;
+    // 合并两份的「本机图片读取失败」（按 src 去重），供命令层据此把结果判为 partial。
+    const localMissing = [];
+    const seenMissing = new Set();
+    for (const m of [...mdInlined.missing, ...htmlInlined.missing]) {
+        if (seenMissing.has(m.src)) continue;
+        seenMissing.add(m.src);
+        localMissing.push(m);
+    }
 
     await gotoWritePage(page, profile.home, profile.originRe);
 
     const ctx = {
         title,
         content,
-        markdown: norm.markdown,
-        html: norm.html,
+        markdown,
+        html,
         draftOnly: !!draftOnly,
         outputFormat: profile.outputFormat,
         preprocessConfig: profile.preprocessConfig || null,
@@ -175,7 +191,11 @@ export async function publishArticle(page, args) {
         id: result.id,
         url: result.url,
         draft: result.draft,
-        images: { uploaded: result.uploaded || [], failed: result.failed || [] },
+        // 图片失败 = 页面内转存失败(result.failed) + Node 侧本机图片读取失败(localMissing)。
+        images: {
+            uploaded: result.uploaded || [],
+            failed: (result.failed || []).concat(localMissing),
+        },
     };
 }
 

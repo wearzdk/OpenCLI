@@ -36,6 +36,9 @@
  *   throttleMs    每张图之间的间隔毫秒，默认 250
  */
 
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+
 const HTML_IMG_RE = /<img\b[^>]*?\ssrc=("|')(.*?)\1[^>]*>/gi;
 // Markdown 图片：![alt](url "title")。只取 url 部分，title/尺寸后缀忽略。
 const MD_IMG_RE = /!\[[^\]]*\]\(\s*<?([^)\s>]+)>?[^)]*\)/g;
@@ -182,6 +185,76 @@ export function buildTransferImagesJs(content, spec, skip) {
     );
 }
 
+const MIME_BY_EXT = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+    webp: 'image/webp', svg: 'image/svg+xml', bmp: 'image/bmp', ico: 'image/x-icon',
+    avif: 'image/avif', tif: 'image/tiff', tiff: 'image/tiff',
+};
+
+/**
+ * 判断一个图片 src 是否指向【本机文件系统的绝对路径】（而非可被浏览器 fetch 的 URL）。
+ * 页面内 fetch 只能解析 http(s)/data/blob 等 URL；本机绝对路径（如 /tmp/x.png）会被当成
+ * 站点相对 URL → 404。所以这类 src 必须在 Node 侧先读成 data: URI 再注入页面。纯函数。
+ */
+export function isLocalImagePath(src) {
+    if (typeof src !== 'string' || !src) return false;
+    if (src.startsWith('file://')) return true;
+    if (/^[a-zA-Z]:[\\/]/.test(src)) return true;          // Windows 盘符 C:\ 或 C:/
+    if (src.startsWith('//')) return false;                // 协议相对 URL
+    if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(src)) return false; // 其它 URI scheme（http: data: blob: …）
+    if (src.startsWith('/')) return true;                  // Unix 绝对路径
+    return false;                                          // 相对路径视为站点相对，不当本机文件
+}
+
+function localPathFromSrc(src) {
+    if (src.startsWith('file://')) {
+        try { return fileURLToPath(src); } catch { return src.slice('file://'.length); }
+    }
+    return src;
+}
+
+/**
+ * Node 侧：把正文里引用的【本机图片路径】读成 base64 data: URI，原地替换回正文。
+ * 这样注入页面后，平台的图片转存（binary-multipart / 自定义 uploadFn）就能 fetch 到字节
+ * 并转存到平台图床——否则本机路径在页面里会被当成站点相对 URL、直接 404（图全裂）。
+ * 只处理本机绝对路径；http(s)/data/相对 URL 一律原样保留，交给页面内转存或平台自处理。
+ *
+ * @param {string} content  文章正文（Markdown 或 HTML）
+ * @param {{ readFile?: (p: string) => Promise<Uint8Array|Buffer> }} [deps]  便于测试注入
+ * @returns {Promise<{ content: string, inlined: Array<{src:string,bytes:number,mime:string}>, missing: Array<{src:string,error:string}> }>}
+ */
+export async function inlineLocalImages(content, deps = {}) {
+    const read = deps.readFile || readFile;
+    const inlined = [];
+    const missing = [];
+    if (typeof content !== 'string' || !content) return { content: content || '', inlined, missing };
+    const refs = extractImageRefs(content);
+    const cache = {};
+    let out = content;
+    for (const ref of refs) {
+        const src = ref.src;
+        if (!isLocalImagePath(src)) continue;
+        if (!(src in cache)) {
+            try {
+                const p = localPathFromSrc(src);
+                const buf = await read(p);
+                const bytes = buf.byteLength != null ? buf.byteLength : buf.length;
+                const ext = (p.split(/[\\/]/).pop().split('.').pop() || '').toLowerCase().split('?')[0];
+                const mime = MIME_BY_EXT[ext] || 'image/png';
+                const b64 = Buffer.from(buf).toString('base64');
+                cache[src] = `data:${mime};base64,${b64}`;
+                inlined.push({ src, bytes, mime });
+            } catch (e) {
+                cache[src] = null;
+                missing.push({ src, error: String((e && e.message) || e) });
+            }
+        }
+        const du = cache[src];
+        if (du) out = out.split(ref.full).join(ref.full.replace(src, du));
+    }
+    return { content: out, inlined, missing };
+}
+
 /**
  * 在平台页面里把正文图片全部转存到本平台图床，返回改写后的正文 + 转存报告。
  * 调用前 page 必须已经导航到该平台的写作 origin（cookie / Origin 才正确）。
@@ -208,6 +281,8 @@ export const __test__ = {
     extractImageRefs,
     pickPath,
     buildTransferImagesJs,
+    isLocalImagePath,
+    inlineLocalImages,
     HTML_IMG_RE,
     MD_IMG_RE,
 };

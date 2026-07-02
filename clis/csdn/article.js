@@ -34,8 +34,8 @@ async function resolvePayload(kwargs) {
     return resolved;
 }
 
-function buildResultRow(message, targetType, target, outcome, extra = {}) {
-    return [{ status: 'success', outcome, message, target_type: targetType, target, ...extra }];
+function buildResultRow(message, targetType, target, outcome, extra = {}, status = 'success') {
+    return [{ status, outcome, message, target_type: targetType, target, ...extra }];
 }
 
 // ── CSDN 平台 profile ─────────────────────────────────────────────────────────
@@ -110,13 +110,20 @@ const csdnProfile = {
 
             // 步骤一：下载图片字节
             var imageResponse = await fetch(src, { credentials: 'omit' });
-            if (!imageResponse.ok) throw new Error('图片下载失败: ' + src);
+            if (!imageResponse.ok) throw new Error('图片下载失败: ' + src.slice(0, 80));
             var imageBlob = await imageResponse.blob();
 
-            // 步骤二：获取文件扩展名
-            var ext = (src.split('.').pop() || 'jpg').toLowerCase().split('?')[0];
+            // 步骤二：确定扩展名。优先从 URL 后缀猜；本机图片是以 data: URI 传进来的（无文件名），
+            // 后缀猜不出时退回 blob.type（如 image/png → png）。
             var validExts = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-            var validExt = validExts.indexOf(ext) !== -1 ? ext : 'jpg';
+            var ext = (src.split('?')[0].split('.').pop() || '').toLowerCase();
+            if (validExts.indexOf(ext) === -1) {
+                var mt = (imageBlob.type || '').toLowerCase();      // e.g. image/png
+                var sub = mt.indexOf('/') !== -1 ? mt.split('/')[1] : '';
+                if (sub === 'jpeg') sub = 'jpg';
+                ext = validExts.indexOf(sub) !== -1 ? sub : '';
+            }
+            var validExt = ext || 'jpg';
 
             // 步骤三：向 CSDN 请求上传签名
             var signApiPath = '/resource-api/v1/image/direct/upload/signature';
@@ -372,12 +379,25 @@ cli({
         if (upN || failN) {
             message += `·图片：${upN} 张转存成功${failN ? `，${failN} 张失败` : ''}`;
         }
+        // 有图片没转存成功 = 部分成功：正文已发/存草稿，但对应图片会裂。醒目提示 + status=partial，
+        // 避免云端 AI 把它当成功而漏掉图（正文与图片是一体的，缺图不算完整发布）。
+        if (failN > 0) {
+            const detail = result.images.failed
+                .map((f) => (f && f.src) || '').filter(Boolean).slice(0, 5).join('；');
+            message += `。⚠️ 有图片未成功转存（正文里这些图会裂），请检查图片来源后重发：${detail}`;
+        }
         return buildResultRow(
             message,
             'article',
             '',
             result.draft ? 'draft' : 'created',
-            { created_target: 'article:' + result.id, created_url: result.url },
+            {
+                created_target: 'article:' + result.id,
+                created_url: result.url,
+                images_uploaded: upN,
+                images_failed: failN,
+            },
+            failN > 0 ? 'partial' : 'success',
         );
     },
 });
