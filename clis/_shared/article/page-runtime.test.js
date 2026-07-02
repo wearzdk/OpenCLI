@@ -1,8 +1,57 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import { evalPageRuntime } from './page-runtime.js';
 
 const PP = evalPageRuntime();
+
+describe('PP.md5（字节级，供平台图片上传凭证用）', () => {
+    const ref = (input) => createHash('md5').update(input).digest('hex');
+
+    it('RFC 1321 标准向量', () => {
+        expect(PP.md5('')).toBe('d41d8cd98f00b204e9800998ecf8427e');
+        expect(PP.md5('abc')).toBe('900150983cd24fb0d6963f7d28e17f72');
+        expect(PP.md5('message digest')).toBe('f96b697d7cb7938d525a2f31aaf161d0');
+    });
+
+    it('padding 边界（55/56/63/64/65 字节）与长输入', () => {
+        for (const n of [55, 56, 63, 64, 65, 200]) {
+            const s = 'a'.repeat(n);
+            expect(PP.md5(s)).toBe(ref(s));
+        }
+    });
+
+    it('二进制输入：Uint8Array 与 ArrayBuffer 等价，含 >127 字节', () => {
+        const bin = new Uint8Array(10000);
+        for (let i = 0; i < bin.length; i++) bin[i] = (i * 37 + i * i) & 0xFF;
+        expect(PP.md5(bin)).toBe(ref(bin));
+        expect(PP.md5(bin.buffer)).toBe(ref(bin));
+    });
+
+    it('多字节 UTF-8 字符串按 UTF-8 编码取字节', () => {
+        const s = '中文测试🀄';
+        expect(PP.md5(s)).toBe(ref(Buffer.from(s, 'utf-8')));
+    });
+});
+
+describe('PP.dataUriToBlob（CSP 拦 fetch(data:) 的绕行）', () => {
+    it('base64 data URI → Blob，mime 与字节都正确', async () => {
+        const bytes = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0, 255]);
+        const blob = PP.dataUriToBlob('data:image/png;base64,' + bytes.toString('base64'));
+        expect(blob.type).toBe('image/png');
+        expect(Buffer.from(await blob.arrayBuffer())).toEqual(bytes);
+    });
+
+    it('非 base64（URL 编码文本）也能解', async () => {
+        const blob = PP.dataUriToBlob('data:text/plain,hello%20world');
+        expect(blob.type).toBe('text/plain');
+        expect(Buffer.from(await blob.arrayBuffer()).toString()).toBe('hello world');
+    });
+
+    it('非 data: 输入抛错', () => {
+        expect(() => PP.dataUriToBlob('https://a.com/x.png')).toThrow(/not a data/);
+    });
+});
 
 describe('PP.preprocess（预处理器移植自 Wechatsync content-processor）', () => {
     it('convertSectionToDiv：section → div，保留内容', () => {

@@ -47188,7 +47188,7 @@
   {
     "site": "zhihu",
     "name": "article",
-    "description": "Publish a Zhihu article (文章/专栏). Body is Markdown by default; images are auto-rehosted to Zhihu.",
+    "description": "Publish a Zhihu article (文章/专栏). Body is Markdown by default; images (incl. local paths) and --cover are auto-rehosted to Zhihu.",
     "access": "write",
     "domain": "zhuanlan.zhihu.com",
     "strategy": "cookie",
@@ -47219,6 +47219,12 @@
         "type": "boolean",
         "required": false,
         "help": "Treat body as raw HTML instead of Markdown"
+      },
+      {
+        "name": "cover",
+        "type": "str",
+        "required": false,
+        "help": "Cover image (题图): local file path or image URL; auto-rehosted to Zhihu (zhimg.com)"
       },
       {
         "name": "draft",

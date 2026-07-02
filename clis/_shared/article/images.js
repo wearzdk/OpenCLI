@@ -214,6 +214,25 @@ function localPathFromSrc(src) {
 }
 
 /**
+ * Node 侧：把单个【本机图片路径】读成 base64 data: URI。
+ * 供正文之外的单图参数（如 --cover 封面）复用与 inlineLocalImages 相同的读取逻辑。
+ * 读不到时抛错（单图参数是用户显式意图，不能静默降级）。
+ *
+ * @param {string} src  本机绝对路径或 file:// URL
+ * @param {{ readFile?: (p: string) => Promise<Uint8Array|Buffer> }} [deps]
+ * @returns {Promise<{ dataUri: string, bytes: number, mime: string }>}
+ */
+export async function localImageToDataUri(src, deps = {}) {
+    const read = deps.readFile || readFile;
+    const p = localPathFromSrc(src);
+    const buf = await read(p);
+    const bytes = buf.byteLength != null ? buf.byteLength : buf.length;
+    const ext = (p.split(/[\\/]/).pop().split('.').pop() || '').toLowerCase().split('?')[0];
+    const mime = MIME_BY_EXT[ext] || 'image/png';
+    return { dataUri: `data:${mime};base64,${Buffer.from(buf).toString('base64')}`, bytes, mime };
+}
+
+/**
  * Node 侧：把正文里引用的【本机图片路径】读成 base64 data: URI，原地替换回正文。
  * 这样注入页面后，平台的图片转存（binary-multipart / 自定义 uploadFn）就能 fetch 到字节
  * 并转存到平台图床——否则本机路径在页面里会被当成站点相对 URL、直接 404（图全裂）。
@@ -283,6 +302,7 @@ export const __test__ = {
     buildTransferImagesJs,
     isLocalImagePath,
     inlineLocalImages,
+    localImageToDataUri,
     HTML_IMG_RE,
     MD_IMG_RE,
 };

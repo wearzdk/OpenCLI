@@ -102,3 +102,107 @@ describe('publishArticle（端到端，单次 evaluate）', () => {
         await expect(publishArticle({}, { title: 't', body: 'b', profile: { home: 'x' } })).rejects.toThrow(/publish must be a function/);
     });
 });
+
+// ── 封面统一转存（publishParams.cover 走平台图片管道）──────────────────────
+describe('publishArticle：封面统一转存', () => {
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); delete globalThis.__published; });
+
+    const makeProfile = (fetchOverrides = {}) => ({
+        home: 'http://localhost',
+        originRe: '.',
+        outputFormat: 'html',
+        image: {
+            spec: { url: 'https://up.example.com/upload', bodyType: 'form', body: { url: '{src}' }, responsePath: 'src', throttleMs: 0 },
+            skip: ['cdn.example.com'],
+        },
+        publish: async (I) => { globalThis.__published = I; return { id: '1', url: 'u', draft: true }; },
+        ...fetchOverrides,
+    });
+
+    it('外链封面经平台管道转存，publish 收到平台图床 URL，并计入转存统计', async () => {
+        const fetchImpl = vi.fn(async () => ({
+            ok: true, status: 200, text: async () => JSON.stringify({ src: 'https://cdn.example.com/cover-new.png' }),
+        }));
+        const p = publishArticle(evalPage(fetchImpl), {
+            title: 't', body: '<p>正文无图</p>', format: 'html', draftOnly: true,
+            profile: makeProfile(),
+            publishParams: { cover: 'https://other.com/cover.png' },
+        });
+        await vi.runAllTimersAsync();
+        const out = await p;
+        expect(globalThis.__published.params.cover).toBe('https://cdn.example.com/cover-new.png');
+        expect(out.images.uploaded).toHaveLength(1);
+    });
+
+    it('封面已在平台图床（skip 命中）则原样保留、不再上传', async () => {
+        const fetchImpl = vi.fn(async () => { throw new Error('不应发起上传'); });
+        const p = publishArticle(evalPage(fetchImpl), {
+            title: 't', body: '<p>正文</p>', format: 'html', draftOnly: true,
+            profile: makeProfile(),
+            publishParams: { cover: 'https://cdn.example.com/already.png' },
+        });
+        await vi.runAllTimersAsync();
+        const out = await p;
+        expect(globalThis.__published.params.cover).toBe('https://cdn.example.com/already.png');
+        expect(out.images.uploaded).toHaveLength(0);
+    });
+
+    it('封面转存失败 → 硬失败（stage=cover），不静默丢封面', async () => {
+        const fetchImpl = vi.fn(async () => ({ ok: false, status: 500, text: async () => 'boom' }));
+        const p = publishArticle(evalPage(fetchImpl), {
+            title: 't', body: '<p>正文</p>', format: 'html', draftOnly: true,
+            profile: makeProfile(),
+            publishParams: { cover: 'https://other.com/cover.png' },
+        });
+        const asserted = expect(p).rejects.toThrow(/\[cover\].*封面图转存失败/);
+        await vi.runAllTimersAsync();
+        await asserted;
+    });
+
+    it('本机封面路径：Node 侧读成 data: URI 注入，管道按 data: 走上传', async () => {
+        // 真实 fs I/O 与假计时器互相错位（setTimeout 在 runAllTimersAsync 之后才调度），
+        // 这条用真实计时器（throttleMs=0，本来就不等）。
+        vi.useRealTimers();
+        const { writeFile, mkdtemp, rm } = await import('node:fs/promises');
+        const { tmpdir } = await import('node:os');
+        const { join } = await import('node:path');
+        const dir = await mkdtemp(join(tmpdir(), 'pubtest-'));
+        const coverPath = join(dir, 'cover.png');
+        await writeFile(coverPath, Buffer.from([0x89, 0x50, 0x4E, 0x47]));
+        try {
+            const seen = [];
+            const fetchImpl = vi.fn(async (url, opts) => {
+                seen.push(String((opts && opts.body && opts.body.get && opts.body.get('url')) || url));
+                return { ok: true, status: 200, text: async () => JSON.stringify({ src: 'https://cdn.example.com/local-new.png' }) };
+            });
+            await publishArticle(evalPage(fetchImpl), {
+                title: 't', body: '<p>正文</p>', format: 'html', draftOnly: true,
+                profile: makeProfile(),
+                publishParams: { cover: coverPath },
+            });
+            // 上传请求里的 src 是 data: URI（本机文件已内联），publish 收到转存后的图床地址
+            expect(seen.some((s) => s.indexOf('data:image/png;base64,') === 0)).toBe(true);
+            expect(globalThis.__published.params.cover).toBe('https://cdn.example.com/local-new.png');
+        } finally {
+            await rm(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('本机封面路径读不到 → 硬报错', async () => {
+        const fetchImpl = vi.fn(async () => ({ ok: true, status: 200, text: async () => '{}' }));
+        await expect(publishArticle(evalPage(fetchImpl), {
+            title: 't', body: '<p>正文</p>', format: 'html', draftOnly: true,
+            profile: makeProfile(),
+            publishParams: { cover: '/no/such/cover-file.png' },
+        })).rejects.toThrow(/封面图读取失败/);
+    });
+
+    it('封面含非法字符（引号/空白）→ 拒绝', async () => {
+        await expect(publishArticle(evalPage(vi.fn()), {
+            title: 't', body: '<p>正文</p>', format: 'html', draftOnly: true,
+            profile: makeProfile(),
+            publishParams: { cover: 'https://a.com/x".png' },
+        })).rejects.toThrow(/非法字符/);
+    });
+});

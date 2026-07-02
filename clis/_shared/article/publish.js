@@ -18,7 +18,7 @@
  */
 import { CommandExecutionError } from '@jackwener/opencli/errors';
 import { normalizeContent } from './format.js';
-import { inlineLocalImages } from './images.js';
+import { inlineLocalImages, isLocalImagePath, localImageToDataUri } from './images.js';
 import { PAGE_RUNTIME } from './page-runtime.js';
 
 /**
@@ -110,6 +110,21 @@ export function buildPublishJs(ctx, publishFnSource, uploadFnSource) {
             ? 'const __t = await PP.processImagesWith(content, (src) => __upload(src, PP), { skip: I.imageSkip });\n'
             : 'const __t = await PP.transferImages(content, I.imageSpec, I.imageSkip);\n') +
         'content = __t.content;\n' +
+        // 封面转存（统一逻辑）：publishParams.cover 与正文图走**同一条**平台图片管道——
+        // 包装成单个 <img> 交给转存器（skip 域名 / data: 同一套语义），转存成功后原地
+        // 替换为平台图床 URL；已在平台图床（skip 命中）则原样保留。封面是用户显式意图，
+        // 转存失败必须硬失败，不允许静默丢封面发出去。
+        'if (I.publishParams && typeof I.publishParams.cover === "string" && I.publishParams.cover) {\n' +
+        '  var __cvWrap = \'<img src="\' + I.publishParams.cover + \'">\';\n' +
+        (uploadFnSource
+            ? '  var __cv = await PP.processImagesWith(__cvWrap, (src) => __upload(src, PP), { skip: I.imageSkip });\n'
+            : '  var __cv = await PP.transferImages(__cvWrap, I.imageSpec, I.imageSkip);\n') +
+        '  if (__cv.failed.length) {\n' +
+        '    return { ok: false, stage: "cover", message: "封面图转存失败：" + __cv.failed[0].error, uploaded: __t.uploaded, failed: __t.failed.concat(__cv.failed) };\n' +
+        '  }\n' +
+        '  if (__cv.uploaded.length) I.publishParams.cover = __cv.uploaded[0].url;\n' +
+        '  __t.uploaded = __t.uploaded.concat(__cv.uploaded);\n' +
+        '}\n' +
         // 调平台发布函数（页面内，带登录态）。content 已转存；I.markdown / I.html 是未转存的
         // 两份原始格式，供需要「同时塞 markdown 和 html」的平台（如 CSDN）取用。
         'const __pub = await __publish({ title: I.title, content: content, markdown: I.markdown, html: I.html, draftOnly: I.draftOnly, params: I.publishParams }, PP);\n' +
@@ -164,6 +179,26 @@ export async function publishArticle(page, args) {
         localMissing.push(m);
     }
 
+    // 封面（publishParams.cover）：本机路径页面内 fetch 不到，与正文图同理先读成 data: URI，
+    // 交给页面内的统一封面转存（见 buildPublishJs）。读取失败硬报错——封面是显式意图。
+    let effectiveParams = publishParams;
+    if (effectiveParams && typeof effectiveParams.cover === 'string' && effectiveParams.cover) {
+        const cover = effectiveParams.cover.trim();
+        if (/["<>\s]/.test(cover)) {
+            throw new CommandExecutionError('封面图路径/URL 含非法字符（引号/尖括号/空白）：' + cover.slice(0, 120));
+        }
+        if (isLocalImagePath(cover)) {
+            try {
+                const { dataUri } = await localImageToDataUri(cover);
+                effectiveParams = { ...effectiveParams, cover: dataUri };
+            } catch (e) {
+                throw new CommandExecutionError('封面图读取失败：' + cover + '（' + String((e && e.message) || e) + '）');
+            }
+        } else {
+            effectiveParams = { ...effectiveParams, cover };
+        }
+    }
+
     await gotoWritePage(page, profile.home, profile.originRe);
 
     const ctx = {
@@ -176,7 +211,7 @@ export async function publishArticle(page, args) {
         preprocessConfig: profile.preprocessConfig || null,
         imageSpec: profile.image?.spec || null,
         imageSkip: profile.image?.skip || [],
-        publishParams: publishParams,
+        publishParams: effectiveParams,
     };
     const uploadFnSource = typeof profile.image?.uploadFn === 'function' ? profile.image.uploadFn.toString() : null;
     const js = buildPublishJs(ctx, profile.publish.toString(), uploadFnSource);
